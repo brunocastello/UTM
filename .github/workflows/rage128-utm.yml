@@ -1,0 +1,94 @@
+name: Rage128 UTM build
+
+# Manual only: a full UTM build takes ~1.5 h.
+on:
+  workflow_dispatch:
+    inputs:
+      qemu_ref:
+        description: QEMU fork branch to build
+        default: rage128
+
+jobs:
+  build-macos:
+    name: Build UTM macOS (Rage128 QEMU)
+    runs-on: xcode-27
+    strategy:
+      matrix:
+        arch: [arm64]
+    steps:
+      - name: Checkout UTM
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: UTM
+
+      - name: Checkout patched QEMU
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/qemu
+          ref: ${{ inputs.qemu_ref || 'rage128' }}
+          submodules: recursive
+          path: qemu-patched
+
+      - name: Select Xcode
+        run: |
+          [[ "$(xcode-select -p)" == /Applications/Xcode.app* ]] || sudo xcode-select -s /Applications/Xcode.app
+
+      # Xcode 27 ships without the Metal toolchain; ANGLE needs it.
+      - name: Install Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      # Mirrors the "Install Requirements" step of .github/workflows/build.yml
+      - name: Install Homebrew build tools
+        run: |
+          brew uninstall cmake || true
+          brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
+          brew install llvm spirv-llvm-translator spirv-tools libxcb libxrandr
+          echo "/usr/local/opt/bison/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
+          rm -f /usr/local/lib/pkgconfig/*.pc
+
+      - name: Python packages
+        run: pip3 install --break-system-packages --user six pyparsing pyyaml setuptools distlib mako
+
+      # gstreamer.freedesktop.org intermittently returns 503; pre-fetch with
+      # patient retries. download() in build_dependencies.sh skips files that
+      # already exist in the build directory.
+      - name: Pre-fetch flaky gstreamer tarballs
+        working-directory: UTM
+        run: |
+          source patches/sources
+          dir="build-macOS-${{ matrix.arch }}"
+          mkdir -p "$dir"
+          for url in "$GST_SRC" "$GST_BASE_SRC" "$GST_GOOD_SRC"; do
+            for i in $(seq 1 30); do
+              curl -f -L -o "$dir/$(basename "$url")" "$url" && break
+              echo "attempt $i failed, sleeping 60s"; sleep 60
+            done
+            [ -s "$dir/$(basename "$url")" ] || exit 1
+          done
+
+      - name: Build dependencies (using patched QEMU)
+        working-directory: UTM
+        run: |
+          ./scripts/build_dependencies.sh \
+            -p macos \
+            -a ${{ matrix.arch }} \
+            -q "$GITHUB_WORKSPACE/qemu-patched"
+
+      - name: Build UTM
+        working-directory: UTM
+        run: |
+          ./scripts/build_utm.sh \
+            -k macosx \
+            -s macOS \
+            -a ${{ matrix.arch }} \
+            -o "$GITHUB_WORKSPACE/UTM"
+          cd "$GITHUB_WORKSPACE"
+          tar -acf UTM.xcarchive.tgz UTM.xcarchive
+
+      - name: Upload xcarchive
+        uses: actions/upload-artifact@v4
+        with:
+          name: UTM-macos-${{ matrix.arch }}-${{ inputs.qemu_ref || 'rage128' }}
+          path: UTM.xcarchive.tgz
