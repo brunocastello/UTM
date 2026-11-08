@@ -283,6 +283,10 @@ import Virtualization // for getting network interfaces
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
                         "edid=on"
                     }
+                    if display.hardware.rawValue == "VGA" && isClassicMacNewWorld {
+                        // hardware cursor for the bundled Mac OS 9 qemu_vga.ndrv
+                        "mac-accel=on"
+                    }
                     if isDisplayGLSupported(display) && isVulkanSupported {
                         "hostmem=8G"
                         "blob=true"
