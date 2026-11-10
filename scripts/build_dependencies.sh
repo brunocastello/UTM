@@ -820,8 +820,13 @@ build_qemu_dependencies () {
 build_shader_compilers () {
     cmake_build $SPIRV_CROSS_REPO -DSPIRV_CROSS_STATIC=On -DSPIRV_CROSS_SHARED=Off -DSPIRV_CROSS_CLI=Off -DSPIRV_CROSS_ENABLE_TESTS=Off -DSPIRV_CROSS_ENABLE_C_API=On
     cmake_build $SHADERC_REPO -DSHADERC_SKIP_TESTS=On -DSHADERC_SKIP_EXAMPLES=On -DSHADERC_SKIP_EXECUTABLES=On -DSHADERC_SKIP_COPYRIGHT_CHECK=On -DSHADERC_ENABLE_WERROR_COMPILE=Off -DSPIRV_SKIP_TESTS=On -DSPIRV_SKIP_EXECUTABLES=On -DENABLE_GLSLANG_BINARIES=Off -DBUILD_TESTING=Off -DSKIP_GLSLANG_INSTALL=On -DSKIP_SPIRV_TOOLS_INSTALL=On -DSPIRV_HEADERS_SKIP_INSTALL=On
-    # QEMU links shaderc_combined statically, keep the shared copy out of the app
-    rm -f "$PREFIX"/lib/libshaderc_shared*.dylib "$PREFIX/lib/pkgconfig/shaderc.pc"
+    # QEMU links only libshaderc_combined.a (it embeds glslang and SPIRV-Tools).
+    # Drop the rest of the install: its shared libraries would end up in the app
+    # and its headers would shadow MoltenVK's own SPIRV copies.
+    rm -rf "$PREFIX/include/glslang" "$PREFIX/include/spirv-tools" "$PREFIX"/lib/cmake/glslang "$PREFIX"/lib/cmake/SPIRV-Tools*
+    rm -f "$PREFIX"/lib/libshaderc_shared* "$PREFIX/lib/libshaderc.a" "$PREFIX"/lib/libglslang*.a "$PREFIX"/lib/libSPIRV*.a "$PREFIX"/lib/libSPIRV*.dylib
+    rm -f "$PREFIX/lib/libGenericCodeGen.a" "$PREFIX/lib/libMachineIndependent.a" "$PREFIX/lib/libOSDependent.a"
+    rm -f "$PREFIX/lib/pkgconfig/shaderc.pc" "$PREFIX/lib/pkgconfig/shaderc_static.pc" "$PREFIX"/lib/pkgconfig/SPIRV-Tools*.pc
 }
 
 build_spice_client () {
