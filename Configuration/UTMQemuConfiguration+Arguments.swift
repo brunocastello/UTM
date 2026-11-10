@@ -277,7 +277,13 @@ import Virtualization // for getting network interfaces
                 if !shouldSkipDisplay(display) {
                     f("-device")
                     filterDisplayIfRemote(display.hardware)
-                    if let vgaRamSize = displays[0].vgaRamMib {
+                    if isRadeonR300(display) {
+                        // slot e matches the OpenFirmware path in the boot-command below
+                        "addr=e.0"
+                        "vgamem_mb=\(radeonVramMib)"
+                        "renderer=metal"
+                        "romfile=" // no ROM, OpenFirmware properties are set in boot-command
+                    } else if let vgaRamSize = displays[0].vgaRamMib {
                         "vgamem_mb=\(vgaRamSize)"
                     }
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
@@ -372,6 +378,21 @@ import Virtualization // for getting network interfaces
 
     private var isClassicMacM68K: Bool {
         system.architecture == .m68k && system.target.rawValue == QEMUTarget_m68k.q800.rawValue
+    }
+
+    private static let radeonR300DefaultVramMib = 128
+
+    private func isRadeonR300(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        isClassicMacNewWorld && display.hardware.rawValue == QEMUDisplayDevice_ppc.ati_radeon_9700.rawValue
+    }
+
+    /// The Radeon 9700 (Mac OS X 10.3-10.5), which needs its own OpenBIOS and boot properties.
+    private var isRadeonR300Used: Bool {
+        displays.contains { isRadeonR300($0) }
+    }
+
+    private var radeonVramMib: Int {
+        displays.first.flatMap { $0.vgaRamMib } ?? Self.radeonR300DefaultVramMib
     }
 
     private var isClassicMacNewWorld: Bool {
@@ -640,6 +661,14 @@ import Virtualization // for getting network interfaces
             declrom
             f()
         }
+        if isRadeonR300Used {
+            if !hasCustomBios {
+                f("-bios")
+                f("openbios-ppc-r300")
+            }
+            f("-global")
+            f("uni-north-pci.agp-capable=on")
+        }
         if isClassicMacNewWorld {
             let ndrvloader = resourceURL.appendingPathComponent("ppc-ndrvloader")
             f("-device")
@@ -649,7 +678,13 @@ import Virtualization // for getting network interfaces
             ndrvloader
             f()
             f("-prom-env")
-            f("boot-command=init-program go")
+            if isRadeonR300Used {
+                // The Mac OS X driver finds the card through these OpenFirmware properties.
+                let vramBytes = String(radeonVramMib * 1024 * 1024, radix: 16)
+                f(#"boot-command= /pci@f2000000/QEMU,VGA@e ['] find-device catch 0= if h# \#(vramBytes) encode-int " VRAM,totalsize" property " ATY,R300" encode-string " model" property " 113-A06500-124" encode-string " ATY,Rom#" property " 109-A06501-00" encode-string " ATY,Card#" property " 1.88" encode-string " ATY,Fcode" property device-end then init-program go"#)
+            } else {
+                f("boot-command=init-program go")
+            }
         }
         f("-m")
         system.memorySize

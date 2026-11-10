@@ -51,6 +51,11 @@ MESA_REPO="https://gitlab.freedesktop.org/osy/mesa.git"
 MESA_COMMIT="eed3e1d9bff9eb38890e0f241e87846cdd729fdf"
 MOLTENVK_REPO="https://github.com/utmapp/MoltenVK.git"
 MOLTENVK_COMMIT="0790efd55b6b302e19487e5654f7fc30f0bdf3df"
+# Shader compiler for the ATI Radeon (ppc-mac-gpu) device: GLSL -> SPIR-V -> MSL
+SHADERC_REPO="https://github.com/google/shaderc.git"
+SHADERC_COMMIT="2c8cae778eec0283b44acbe7ed1a386865d78799" # v2026.3
+SPIRV_CROSS_REPO="https://github.com/KhronosGroup/SPIRV-Cross.git"
+SPIRV_CROSS_COMMIT="6c09849fe88c48eaed08413aa022aaa136a3a057" # vulkan-sdk-1.4.357.0
 LLVM15_SRC="https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.7/llvm-project-15.0.7.src.tar.xz"
 DXMT_REPO="https://github.com/utmapp/dxmt.git"
 DXMT_COMMIT="66e27f3759ff79e41a791ec40e2a70ef6d0c964c"
