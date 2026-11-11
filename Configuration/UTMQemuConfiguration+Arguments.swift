@@ -625,6 +625,10 @@ import Virtualization // for getting network interfaces
         }
         if isClassicMacNewWorld {
             properties = properties.appendingDefaultPropertyName("via", value: "pmu")
+            if isRadeonR300Used {
+                // the Radeon's hardware cursor is driven by this NDRV
+                properties = properties.appendingDefaultPropertyName("ndrv", value: "qemu_vga_hwc.ndrv")
+            }
         }
         return properties
     }
