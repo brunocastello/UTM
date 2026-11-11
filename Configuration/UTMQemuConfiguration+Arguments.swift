@@ -139,8 +139,16 @@ import Virtualization // for getting network interfaces
         f()
         f("-S") // startup stopped
         spiceArguments
-        networkArguments
-        displayArguments
+        if isRadeonR300Used {
+            // The Radeon must sit in slot 0xE (its OpenBIOS and boot-command
+            // expect /pci@f2000000/QEMU,VGA@e). Emit it before the NIC so an
+            // auto-placed sungem cannot take that slot first.
+            displayArguments
+            networkArguments
+        } else {
+            networkArguments
+            displayArguments
+        }
         serialArguments
         cpuArguments
         machineArguments

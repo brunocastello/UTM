@@ -38,7 +38,8 @@ struct VMConfigDisplayView: View {
                     
                     if config.hardware.rawValue.contains("-vga") ||
                         config.hardware.rawValue == "VGA" ||
-                        config.hardware.rawValue == "vmware-svga" {
+                        config.hardware.rawValue == "vmware-svga" ||
+                        config.hardware.rawValue.hasPrefix("ati-radeon") {
                         NumberTextField("VGA Device RAM (MB)", number: $config.vgaRamMib.bound, prompt: "16")
                     }
                 }
