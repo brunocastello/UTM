@@ -689,7 +689,7 @@ import Virtualization // for getting network interfaces
             if isRadeonR300Used {
                 // The Mac OS X driver finds the card through these OpenFirmware properties.
                 let vramBytes = String(radeonVramMib * 1024 * 1024, radix: 16)
-                f(#"boot-command= /pci@f2000000/QEMU,VGA@e ['] find-device catch 0= if h# \#(vramBytes) encode-int " VRAM,totalsize" property " ATY,R300" encode-string " model" property " 113-A06500-124" encode-string " ATY,Rom#" property " 109-A06501-00" encode-string " ATY,Card#" property " 1.88" encode-string " ATY,Fcode" property device-end then init-program go"#)
+                f(#"boot-command=" /pci@f2000000/QEMU,VGA@e" ['] find-device catch 0= if h# \#(vramBytes) encode-int " VRAM,totalsize" property " ATY,R300" encode-string " model" property " 113-A06500-124" encode-string " ATY,Rom#" property " 109-A06501-00" encode-string " ATY,Card#" property " 1.88" encode-string " ATY,Fcode" property device-end then init-program go"#)
             } else {
                 f("boot-command=init-program go")
             }
