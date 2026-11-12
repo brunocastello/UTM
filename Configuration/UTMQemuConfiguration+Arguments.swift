@@ -158,6 +158,11 @@ import Virtualization // for getting network interfaces
             usbArguments
         }
         otherInputsArguments
+        if isRadeonR300Used {
+            // Also reaches a tablet added by the user's own arguments.
+            f("-global")
+            f("usb-tablet.abs-scale=\(Self.macOSXTabletScale)")
+        }
         drivesArguments
         sharingArguments
         miscArguments
@@ -401,6 +406,18 @@ import Virtualization // for getting network interfaces
 
     private var radeonVramMib: Int {
         displays.first.flatMap { $0.vgaRamMib } ?? Self.radeonR300DefaultVramMib
+    }
+
+    /// An installed Mac OS X 10.4 stretches USB tablet input by about 1.1775
+    /// about the screen centre, so the guest cursor drifts away from the host
+    /// pointer (which UTM draws itself with the Radeon's hardware cursor).
+    /// QEMU's usb-tablet `abs-scale` undoes it (1/10000 units).
+    private static let macOSXTabletScale = 11775
+
+    /// True when the user's own QEMU arguments already add a USB tablet
+    /// (e.g. `-usbdevice tablet`), so UTM must not add a second one.
+    private var userArgumentsAddTablet: Bool {
+        qemu.additionalArguments.contains { $0.string.contains("tablet") }
     }
 
     private var isClassicMacNewWorld: Bool {
@@ -1022,6 +1039,11 @@ import Virtualization // for getting network interfaces
             f("-usb")
         }
         if !isClassicMacNewWorld {
+            f("-device")
+            f("usb-tablet,bus=usb-bus.0")
+        } else if isRadeonR300Used && !userArgumentsAddTablet {
+            // Mac OS X has no virtio-input driver, so give it a USB tablet
+            // for the uncaptured (absolute) mouse mode.
             f("-device")
             f("usb-tablet,bus=usb-bus.0")
         }
