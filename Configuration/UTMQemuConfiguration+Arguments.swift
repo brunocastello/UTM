@@ -645,6 +645,9 @@ import Virtualization // for getting network interfaces
             if isRadeonR300Used {
                 // the Radeon's hardware cursor is driven by this NDRV
                 properties = properties.appendingDefaultPropertyName("ndrv", value: "qemu_vga_hwc.ndrv")
+                // NVRAM layout Mac OS X can read: nvram and bless (the last
+                // step of an install) fail without it
+                properties = properties.appendingDefaultPropertyName("osx-nvram", value: "on")
             }
         }
         return properties
