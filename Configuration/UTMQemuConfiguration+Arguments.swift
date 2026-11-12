@@ -1088,7 +1088,11 @@ import Virtualization // for getting network interfaces
     }
 
     @QEMUArgumentBuilder private var otherInputsArguments: [QEMUArgument] {
-        if isClassicMacNewWorld {
+        // Mac OS X (the Radeon 9700 guests) has no virtio-input driver and uses
+        // the USB tablet. A second absolute device there would break the
+        // uncaptured mouse: UTM selects the first absolute mouse QEMU lists,
+        // and that is often the virtio tablet the guest ignores.
+        if isClassicMacNewWorld && !isRadeonR300Used {
             f("-device")
             f("virtio-tablet-pci")
         }
