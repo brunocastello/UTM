@@ -325,9 +325,7 @@ import Virtualization // for getting network interfaces
     }
 
     private func isDisplayGLSupported(_ display: UTMQemuConfigurationDisplay) -> Bool {
-        // The Radeons render on the host; a GL display shows their frames as a
-        // texture upload of the changed area instead of SPICE's CPU copies.
-        display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl") || isRadeon(display)
+        display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl")
     }
 
     private var isGLSupported: Bool {
@@ -367,16 +365,15 @@ import Virtualization // for getting network interfaces
         return UTMQEMUDirectXDriver(rawValue: rawValue) ?? .qemuDirectXDriverDefault
     }
 
-    // Venus and Neptune are virtio-gpu features; the Radeons have neither.
     private var isVulkanSupported: Bool {
-        isGLSupported && !isRadeonUsed &&
+        isGLSupported &&
         (rendererBackend == .qemuRendererBackendAngleMetal || rendererBackend == .qemuRendererBackendDefault) &&
         vulkanDriver != .qemuVulkanDriverDisabled
     }
 
     private var isNeptuneSupported: Bool {
         if #available(macOS 13, iOS 16, *) {
-            return isGLSupported && !isRadeonUsed &&
+            return isGLSupported &&
             (rendererBackend == .qemuRendererBackendAngleMetal || rendererBackend == .qemuRendererBackendDefault) &&
             directXDriver != .qemuDirectXDriverDisabled
         } else {

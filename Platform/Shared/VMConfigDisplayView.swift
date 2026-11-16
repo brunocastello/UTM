@@ -21,8 +21,7 @@ struct VMConfigDisplayView: View {
     @Binding var system: UTMQemuConfigurationSystem
     
     var isGLSupported: Bool {
-        config.hardware.rawValue.contains("-gl-") || config.hardware.rawValue.hasSuffix("-gl") ||
-        config.hardware.rawValue.hasPrefix("ati-radeon-9")
+        config.hardware.rawValue.contains("-gl-") || config.hardware.rawValue.hasSuffix("-gl")
     }
     
     var body: some View {
