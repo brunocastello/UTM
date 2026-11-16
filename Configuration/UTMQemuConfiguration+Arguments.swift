@@ -607,7 +607,13 @@ import Virtualization // for getting network interfaces
             if system.isForceMulticore {
                 "thread=multi"
             }
-            let tbSize = system.jitCacheSize > 0 ? system.jitCacheSize : system.memorySize / 4
+            var tbSize = system.jitCacheSize > 0 ? system.jitCacheSize : system.memorySize / 4
+            if system.jitCacheSize == 0 && isClassicMacNewWorld {
+                // Mac OS X PPC fills a few hundred MiB with translated code on
+                // boot and desktop alone; a full cache throws everything away and
+                // translates it again (ppc-osx-vgpu: 1 GiB lasted ~45 min incl. Doom 3).
+                tbSize = max(tbSize, 1024)
+            }
             "tb-size=\(tbSize)"
             #if WITH_JIT
             // use mirror mapping when we don't have JIT entitlements
