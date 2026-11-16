@@ -340,7 +340,10 @@ import Virtualization // for getting network interfaces
     }
 
     private var glBackend: String {
-        if isGLSupported && !isRemoteSpice {
+        // The Radeon renders on the host already; with a GL display its frames
+        // reach the window as a texture upload of the changed area instead of
+        // SPICE's CPU copies and canvas.
+        if (isGLSupported || isRadeonUsed) && !isRemoteSpice {
             #if os(macOS)
             if rendererBackend == .qemuRendererBackendCGL {
                 return "core"
