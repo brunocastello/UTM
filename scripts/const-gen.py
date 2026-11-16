@@ -349,7 +349,7 @@ def generate(targets, cpus, cpuFlags, machines, displayDevices, networkDevices, 
     return output
 
 # Display devices QEMU lists that UTM does not offer yet (no guest firmware setup).
-UNSUPPORTED_DISPLAY_DEVICES = ['ati-radeon-9000']
+UNSUPPORTED_DISPLAY_DEVICES = []
 
 def transformDisplayCards(displayCards):
     def transform(item):
