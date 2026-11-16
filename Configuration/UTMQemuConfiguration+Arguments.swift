@@ -325,7 +325,9 @@ import Virtualization // for getting network interfaces
     }
 
     private func isDisplayGLSupported(_ display: UTMQemuConfigurationDisplay) -> Bool {
-        display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl")
+        // The Radeons render on the host; a GL display shows their frames as a
+        // texture upload of the changed area instead of SPICE's CPU copies.
+        display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl") || isRadeon(display)
     }
 
     private var isGLSupported: Bool {
@@ -340,10 +342,7 @@ import Virtualization // for getting network interfaces
     }
 
     private var glBackend: String {
-        // The Radeon renders on the host already; with a GL display its frames
-        // reach the window as a texture upload of the changed area instead of
-        // SPICE's CPU copies and canvas.
-        if (isGLSupported || isRadeonUsed) && !isRemoteSpice {
+        if isGLSupported && !isRemoteSpice {
             #if os(macOS)
             if rendererBackend == .qemuRendererBackendCGL {
                 return "core"
@@ -368,15 +367,16 @@ import Virtualization // for getting network interfaces
         return UTMQEMUDirectXDriver(rawValue: rawValue) ?? .qemuDirectXDriverDefault
     }
 
+    // Venus and Neptune are virtio-gpu features; the Radeons have neither.
     private var isVulkanSupported: Bool {
-        isGLSupported &&
+        isGLSupported && !isRadeonUsed &&
         (rendererBackend == .qemuRendererBackendAngleMetal || rendererBackend == .qemuRendererBackendDefault) &&
         vulkanDriver != .qemuVulkanDriverDisabled
     }
 
     private var isNeptuneSupported: Bool {
         if #available(macOS 13, iOS 16, *) {
-            return isGLSupported &&
+            return isGLSupported && !isRadeonUsed &&
             (rendererBackend == .qemuRendererBackendAngleMetal || rendererBackend == .qemuRendererBackendDefault) &&
             directXDriver != .qemuDirectXDriverDisabled
         } else {
