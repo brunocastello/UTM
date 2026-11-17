@@ -961,8 +961,8 @@ build_d3d_drivers () {
 # does not carry the matching device/engine code.
 VIM_PASSTHROUGH_OPENGL_REPO="https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git"
 VIM_PASSTHROUGH_OPENGL_COMMIT="2861da9e265e557aef90319e4451487ed1fed553"
-VIM_DIR="$BUILD_DIR/vim-passthrough-opengl"
 fetch_vim_sources () {
+    VIM_DIR="${BUILD_DIR:?}/vim-passthrough-opengl"
     if [ -d "$VIM_DIR/Source" ]; then
         return
     fi
@@ -997,9 +997,9 @@ build_vim_passthrough_opengl () {
     if [ "$PLATFORM" != "macos" ] || [ ! -f "$QEMU_DIR/hw/display/vim-vram-memory.h" ]; then
         return
     fi
-    DIR="$VIM_DIR"
     echo "${GREEN}Building PassthroughOpenGL host executor...${NC}"
     fetch_vim_sources
+    DIR="$VIM_DIR"
     cp "$QEMU_DIR/hw/display/vim-vram-memory.h" "$DIR/Source/vendor/qemu/hw/display/vim-vram-memory.h"
     if [ -f "$QEMU_DIR/hw/display/vim-display-inprocess.patch" ]; then
         # QEMU owns the display in-process; fail if the patch no longer applies
