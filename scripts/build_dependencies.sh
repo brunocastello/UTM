@@ -962,7 +962,7 @@ build_d3d_drivers () {
 VIM_PASSTHROUGH_OPENGL_REPO="https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git"
 VIM_PASSTHROUGH_OPENGL_COMMIT="2861da9e265e557aef90319e4451487ed1fed553"
 fetch_vim_sources () {
-    VIM_DIR="${BUILD_DIR:?}/vim-passthrough-opengl"
+    VIM_DIR="$(cd "${BUILD_DIR:?}" && pwd)/vim-passthrough-opengl"
     if [ -d "$VIM_DIR/Source" ]; then
         return
     fi
