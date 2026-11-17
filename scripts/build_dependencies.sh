@@ -958,7 +958,7 @@ build_d3d_drivers () {
 # vim-vram-memory.h (in-process memory handoff for the sandboxed launcher).
 # Skipped when the QEMU tree has no PassthroughOpenGL bridge.
 VIM_PASSTHROUGH_OPENGL_REPO="https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git"
-VIM_PASSTHROUGH_OPENGL_COMMIT="979c3a247aea5946a89a4a42dd61bbafe3e2cbbc"
+VIM_PASSTHROUGH_OPENGL_COMMIT="2861da9e265e557aef90319e4451487ed1fed553"
 build_vim_passthrough_opengl () {
     if [ "$PLATFORM" != "macos" ] || [ ! -f "$QEMU_DIR/hw/display/vim-vram-memory.h" ]; then
         return
