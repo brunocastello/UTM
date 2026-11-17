@@ -952,31 +952,62 @@ build_d3d_drivers () {
     fi
 }
 
-# PassthroughOpenGL host executor for vmware-svga,passthrough-opengl-bridge=on
-# (Intel Mac OS X guests). Built unchanged from VirtualIntelMacOnAppleSilicon
-# (MIT) at a pinned commit with its own build script, plus the QEMU tree's
-# vim-vram-memory.h (in-process memory handoff for the sandboxed launcher).
-# Skipped when the QEMU tree has no PassthroughOpenGL bridge.
+# Intel Mac OS X guest support from VirtualIntelMacOnAppleSilicon (MIT), pinned:
+# the PassthroughOpenGL host executor for vmware-svga,passthrough-opengl-bridge=on
+# and the Hybrid Hypervisor engine linked into qemu-system-x86_64 (LC_HVDBT=1).
+# Both are built unchanged with VIM's own scripts, plus the QEMU tree's
+# vim-vram-memory.h and vim-display-inprocess.patch (in-process memory and
+# display handoff for the sandboxed launcher). Skipped when the QEMU tree
+# does not carry the matching device/engine code.
 VIM_PASSTHROUGH_OPENGL_REPO="https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git"
 VIM_PASSTHROUGH_OPENGL_COMMIT="2861da9e265e557aef90319e4451487ed1fed553"
+VIM_DIR="$BUILD_DIR/vim-passthrough-opengl"
+fetch_vim_sources () {
+    if [ -d "$VIM_DIR/Source" ]; then
+        return
+    fi
+    rm -rf "$VIM_DIR"
+    mkdir -p "$VIM_DIR"
+    (
+        cd "$VIM_DIR"
+        git init -q
+        git remote add origin "$VIM_PASSTHROUGH_OPENGL_REPO"
+        git sparse-checkout set Source/PassthroughOpenGL Source/scripts Source/prebuilt/PassthroughOpenGL/common \
+            Source/vendor/qemu/include/hw/display Source/vendor/qemu/hw/display Source/vendor/source/VMsvga2 Source/probes Source/tools \
+            Source/HybridHypervisor
+        git fetch -q --depth 1 --filter=blob:none origin "$VIM_PASSTHROUGH_OPENGL_COMMIT"
+        git checkout -q FETCH_HEAD
+    )
+}
+
+HVDBT_BUILD_FLAGS=
+build_vim_hybrid_hypervisor () {
+    if [ "$PLATFORM" != "macos" ] || [ "$ARCH" != "arm64" ] || [ ! -f "$QEMU_DIR/target/i386/tcg/system/hvdbt.c" ]; then
+        return
+    fi
+    echo "${GREEN}Building Hybrid Hypervisor engine...${NC}"
+    fetch_vim_sources
+    # VIM's build.sh targets arm64-apple-macosx11.0 itself; keep our cross flags out
+    env -u CFLAGS -u CPPFLAGS -u CXXFLAGS -u OBJCFLAGS -u LDFLAGS -u CC -u CXX -u OBJCC \
+        zsh "$VIM_DIR/Source/HybridHypervisor/build.sh" release --library-only
+    HVDBT_BUILD_FLAGS="--hvdbt-engine=$VIM_DIR/Source/HybridHypervisor"
+}
+
 build_vim_passthrough_opengl () {
     if [ "$PLATFORM" != "macos" ] || [ ! -f "$QEMU_DIR/hw/display/vim-vram-memory.h" ]; then
         return
     fi
-    DIR="$BUILD_DIR/vim-passthrough-opengl"
+    DIR="$VIM_DIR"
     echo "${GREEN}Building PassthroughOpenGL host executor...${NC}"
-    rm -rf "$DIR"
-    mkdir -p "$DIR"
-    (
-        cd "$DIR"
-        git init -q
-        git remote add origin "$VIM_PASSTHROUGH_OPENGL_REPO"
-        git sparse-checkout set Source/PassthroughOpenGL Source/scripts Source/prebuilt/PassthroughOpenGL/common \
-            Source/vendor/qemu/include/hw/display Source/vendor/qemu/hw/display Source/vendor/source/VMsvga2 Source/probes Source/tools
-        git fetch -q --depth 1 --filter=blob:none origin "$VIM_PASSTHROUGH_OPENGL_COMMIT"
-        git checkout -q FETCH_HEAD
-    )
+    fetch_vim_sources
     cp "$QEMU_DIR/hw/display/vim-vram-memory.h" "$DIR/Source/vendor/qemu/hw/display/vim-vram-memory.h"
+    if [ -f "$QEMU_DIR/hw/display/vim-display-inprocess.patch" ]; then
+        # QEMU owns the display in-process; fail if the patch no longer applies
+        if ! patch -d "$DIR" -R --dry-run -s -f -p1 < "$QEMU_DIR/hw/display/vim-display-inprocess.patch" >/dev/null 2>&1; then
+            patch -d "$DIR" --dry-run -p1 < "$QEMU_DIR/hw/display/vim-display-inprocess.patch"
+            patch -d "$DIR" -p1 < "$QEMU_DIR/hw/display/vim-display-inprocess.patch"
+        fi
+    fi
     # newer Xcode warnings must not fail the pinned sources
     sed -i '' "s/'-Werror',//" "$DIR/Source/scripts/build-opengl-host.py"
     python3 "$DIR/Source/scripts/build-opengl-host.py" --output "$DIR/out"
@@ -1250,7 +1281,8 @@ mkdir -p "$PREFIX/Frameworks"
 copy_private_headers
 build_pkg_config
 build_qemu_dependencies
-build $QEMU_DIR --cross-prefix="" $QEMU_PLATFORM_BUILD_FLAGS $QEMU_DEBUG_FLAGS
+build_vim_hybrid_hypervisor
+build $QEMU_DIR --cross-prefix="" $QEMU_PLATFORM_BUILD_FLAGS $QEMU_DEBUG_FLAGS $HVDBT_BUILD_FLAGS
 build_spice_client
 build_vulkan_drivers
 build_d3d_drivers
