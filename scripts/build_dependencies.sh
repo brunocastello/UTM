@@ -952,6 +952,37 @@ build_d3d_drivers () {
     fi
 }
 
+# PassthroughOpenGL host executor for vmware-svga,passthrough-opengl-bridge=on
+# (Intel Mac OS X guests). Built unchanged from VirtualIntelMacOnAppleSilicon
+# (MIT) at a pinned commit with its own build script, plus the QEMU tree's
+# vim-vram-memory.h (in-process memory handoff for the sandboxed launcher).
+# Skipped when the QEMU tree has no PassthroughOpenGL bridge.
+VIM_PASSTHROUGH_OPENGL_REPO="https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git"
+VIM_PASSTHROUGH_OPENGL_COMMIT="979c3a247aea5946a89a4a42dd61bbafe3e2cbbc"
+build_vim_passthrough_opengl () {
+    if [ "$PLATFORM" != "macos" ] || [ ! -f "$QEMU_DIR/hw/display/vim-vram-memory.h" ]; then
+        return
+    fi
+    DIR="$BUILD_DIR/vim-passthrough-opengl"
+    echo "${GREEN}Building PassthroughOpenGL host executor...${NC}"
+    rm -rf "$DIR"
+    mkdir -p "$DIR"
+    (
+        cd "$DIR"
+        git init -q
+        git remote add origin "$VIM_PASSTHROUGH_OPENGL_REPO"
+        git sparse-checkout set Source/PassthroughOpenGL Source/scripts Source/prebuilt/PassthroughOpenGL/common \
+            Source/vendor/qemu/include/hw/display Source/vendor/qemu/hw/display Source/vendor/source/VMsvga2 Source/probes Source/tools
+        git fetch -q --depth 1 --filter=blob:none origin "$VIM_PASSTHROUGH_OPENGL_COMMIT"
+        git checkout -q FETCH_HEAD
+    )
+    cp "$QEMU_DIR/hw/display/vim-vram-memory.h" "$DIR/Source/vendor/qemu/hw/display/vim-vram-memory.h"
+    # newer Xcode warnings must not fail the pinned sources
+    sed -i '' "s/'-Werror',//" "$DIR/Source/scripts/build-opengl-host.py"
+    python3 "$DIR/Source/scripts/build-opengl-host.py" --output "$DIR/out"
+    cp "$DIR/out/libVIMPassthroughOpenGLHost.dylib" "$PREFIX/lib/libVIMPassthroughOpenGLHost.dylib"
+}
+
 fixup_all () {
     OLDIFS=$IFS
     IFS=$'\n'
@@ -1223,6 +1254,7 @@ build $QEMU_DIR --cross-prefix="" $QEMU_PLATFORM_BUILD_FLAGS $QEMU_DEBUG_FLAGS
 build_spice_client
 build_vulkan_drivers
 build_d3d_drivers
+build_vim_passthrough_opengl
 fixup_all
 remove_shared_gst_plugins # another hack...
 echo "${GREEN}All done!${NC}"
