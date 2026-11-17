@@ -42,6 +42,16 @@ struct VMConfigDisplayView: View {
                         config.hardware.rawValue.hasPrefix("ati-radeon") {
                         NumberTextField("VGA Device RAM (MB)", number: $config.vgaRamMib.bound, prompt: "16")
                     }
+                    
+                    #if os(macOS)
+                    if config.hardware.rawValue == "vmware-svga" {
+                        Toggle("OpenGL Passthrough", isOn: $config.isPassthroughOpenGL)
+                        if config.isPassthroughOpenGL {
+                            Text("Mac OS X Intel guests need the VMsvga2 drivers.")
+                                .font(.footnote)
+                        }
+                    }
+                    #endif
                 }
                 
                 DetailedSection("Auto Resolution", description: "Requires SPICE guest agent tools to be installed.") {

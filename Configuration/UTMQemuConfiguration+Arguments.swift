@@ -302,6 +302,12 @@ import Virtualization // for getting network interfaces
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
                         "edid=on"
                     }
+                    #if os(macOS)
+                    if display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL {
+                        // host executor ships as VIMPassthroughOpenGLHost.framework
+                        "passthrough-opengl-bridge=on"
+                    }
+                    #endif
                     if display.hardware.rawValue == "VGA" && isClassicMacNewWorld {
                         // hardware cursor for the bundled Mac OS 9 qemu_vga.ndrv
                         "mac-accel=on"

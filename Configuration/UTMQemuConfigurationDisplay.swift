@@ -41,6 +41,10 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
     /// If true, use the true (retina) resolution of the display. Otherwise, use the percieved resolution.
     var isNativeResolution: Bool = false
     
+    /// If true, the VMware SVGA II device forwards the guest's OpenGL calls to the host
+    /// (PassthroughOpenGL, for Mac OS X Intel guests with the VMsvga2 drivers).
+    var isPassthroughOpenGL: Bool = false
+    
     let id = UUID()
     
     enum CodingKeys: String, CodingKey {
@@ -50,6 +54,7 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         case upscalingFilter = "UpscalingFilter"
         case downscalingFilter = "DownscalingFilter"
         case isNativeResolution = "NativeResolution"
+        case isPassthroughOpenGL = "PassthroughOpenGL"
     }
     
     init() {
@@ -63,6 +68,7 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         upscalingFilter = try values.decode(QEMUScaler.self, forKey: .upscalingFilter)
         downscalingFilter = try values.decode(QEMUScaler.self, forKey: .downscalingFilter)
         isNativeResolution = try values.decode(Bool.self, forKey: .isNativeResolution)
+        isPassthroughOpenGL = try values.decodeIfPresent(Bool.self, forKey: .isPassthroughOpenGL) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -73,6 +79,9 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         try container.encode(upscalingFilter, forKey: .upscalingFilter)
         try container.encode(downscalingFilter, forKey: .downscalingFilter)
         try container.encode(isNativeResolution, forKey: .isNativeResolution)
+        if isPassthroughOpenGL {
+            try container.encode(isPassthroughOpenGL, forKey: .isPassthroughOpenGL)
+        }
     }
 }
 
