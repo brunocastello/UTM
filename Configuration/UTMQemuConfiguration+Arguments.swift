@@ -336,8 +336,18 @@ import Virtualization // for getting network interfaces
 
     private var isGLSupported: Bool {
         displays.contains { display in
-            isDisplayGLSupported(display)
+            isDisplayGLSupported(display) || isDisplayPassthroughOpenGL(display)
         }
+    }
+
+    /// The OpenGL passthrough bridge presents host-rendered IOSurfaces as Metal
+    /// scanouts, which reach the client through the GL SPICE display.
+    private func isDisplayPassthroughOpenGL(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        #if os(macOS)
+        return display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL
+        #else
+        return false
+        #endif
     }
 
     private var rendererBackend: UTMQEMURendererBackend {
