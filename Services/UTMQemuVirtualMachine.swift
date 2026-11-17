@@ -381,6 +381,7 @@ extension UTMQemuVirtualMachine {
         system.shmemDirectoryURL = await config.shmemDirectoryURL
         system.appSandboxGroupId = await config.appGroupIdentifier
         system.hasDebugLog = hasDebugLog
+        system.extraEnvironment = await config.qemuEnvironment
         try Task.checkCancellation()
 
         if isShortcut {

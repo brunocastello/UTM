@@ -43,6 +43,16 @@ static int startQemu(UTMProcess *process, int argc, const char *argv[], const ch
     return 0;
 }
 
+- (void)setExtraEnvironment:(NSDictionary<NSString *,NSString *> *)extraEnvironment {
+    for (NSString *key in _extraEnvironment) {
+        [self.mutableEnvironment removeObjectForKey:key];
+    }
+    _extraEnvironment = [extraEnvironment copy];
+    if (_extraEnvironment) {
+        [self.mutableEnvironment addEntriesFromDictionary:_extraEnvironment];
+    }
+}
+
 - (void)setRendererBackend:(UTMQEMURendererBackend)rendererBackend {
     _rendererBackend = rendererBackend;
     switch (rendererBackend) {
