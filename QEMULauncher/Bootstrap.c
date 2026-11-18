@@ -25,7 +25,7 @@
 typedef struct {
     int (*main)(int, const char *[]);
     int (*qemu_init)(int, const char *[], const char *[]);
-    void (*qemu_main_loop)(void);
+    int (*qemu_main_loop)(void);
     void (*qemu_cleanup)(void);
     int (*swtpm_main)(int argc, const char *argv[], const char *prgname, const char *iface);
 } qemu_main_t;
@@ -83,8 +83,13 @@ static void __attribute__((noreturn)) runQemu(qemu_main_t *funcs, int argc, cons
     } else if (funcs->swtpm_main) {
         funcs->swtpm_main(argc, argv, "swtpm", "socket");
     } else {
-        funcs->qemu_main_loop();
+        int status = funcs->qemu_main_loop();
         funcs->qemu_cleanup();
+        // QEMU asked to start again after a reset (QEMU_REBOOT_EXIT_STATUS)
+        const char *reboot = getenv("QEMU_REBOOT_EXIT_STATUS");
+        if (reboot && *reboot && status == atoi(reboot)) {
+            exit(status);
+        }
     }
     exit(0);
 }

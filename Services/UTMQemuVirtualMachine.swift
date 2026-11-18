@@ -157,6 +157,18 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     }
     
     private var startTask: Task<Void, any Error>?
+
+    /// QEMU process of the running VM, kept past QEMUKit's stop to read why it ended
+    private var launchedSystem: UTMQemuSystem?
+
+    /// Guest-initiated restarts in the last minute (VirtualIntelMac's reboot-loop guard)
+    private var recentGuestRestarts: [Date] = []
+
+    /// A reset was requested from UTM, which always starts the VM again
+    private var isHostRestartRequested = false
+
+    /// Options of the last start, reused when a restart starts a new process
+    private var lastStartOptions: UTMVirtualMachineStartOptions = []
     
     private var swtpm: UTMSWTPM?
     
@@ -382,6 +394,7 @@ extension UTMQemuVirtualMachine {
         system.appSandboxGroupId = await config.appGroupIdentifier
         system.hasDebugLog = hasDebugLog
         system.extraEnvironment = await config.qemuEnvironment
+        launchedSystem = system
         try Task.checkCancellation()
 
         if isShortcut {
@@ -524,6 +537,7 @@ extension UTMQemuVirtualMachine {
             throw UTMQemuVirtualMachineError.invalidVmState
         }
         state = .starting
+        lastStartOptions = options
         do {
             startTask = Task {
                 try await _start(options: options)
@@ -575,14 +589,22 @@ extension UTMQemuVirtualMachine {
         isRunningAsDisposible = false
     }
     
-    private func _restart() async throws {
+    /// - Returns: true when QEMU ends on the reset and the VM starts in a new process
+    private func _restart() async throws -> Bool {
         if await registryEntry.isSuspended {
             try? await deleteSnapshot()
         }
         guard let monitor = await qemuVM.monitor else {
             throw UTMQemuVirtualMachineError.invalidVmState
         }
+        if launchedSystem?.extraEnvironment?["QEMU_REBOOT_EXIT_STATUS"] != nil {
+            // -action reboot=shutdown: QEMU may quit before it replies
+            isHostRestartRequested = true
+            try? await monitor.qemuReset()
+            return true
+        }
         try await monitor.qemuReset()
+        return false
     }
     
     func restart() async throws {
@@ -591,7 +613,9 @@ extension UTMQemuVirtualMachine {
         }
         state = .stopping
         do {
-            try await _restart()
+            if try await _restart() {
+                return // stopping, then started again by qemuVMDidStop
+            }
             state = .started
         } catch {
             state = .stopped
@@ -814,6 +838,10 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
     }
     
     func qemuVMDidStop(_ qemuVM: QEMUVirtualMachine) {
+        let isRestart = launchedSystem?.didRequestRestart == true
+        let isHostRestart = isHostRestartRequested
+        launchedSystem = nil
+        isHostRestartRequested = false
         #if WITH_SERVER
         spicePort = nil
         spiceServerInfo = nil
@@ -833,6 +861,28 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
         snapshotUnsupportedError = nil
         try? saveScreenshot()
         state = .stopped
+        if isRestart {
+            startAfterRestart(isHostRestart: isHostRestart)
+        }
+    }
+
+    /// Start a fresh QEMU process where the old one ended on a reset
+    /// (`-action reboot=shutdown`), as VirtualIntelMac does for Intel Mac guests.
+    private func startAfterRestart(isHostRestart: Bool) {
+        let now = Date()
+        recentGuestRestarts = recentGuestRestarts.filter { now.timeIntervalSince($0) < 60 }
+        if !isHostRestart {
+            guard recentGuestRestarts.count < 6 else {
+                logger.error("Guest restarted \(recentGuestRestarts.count) times in a minute, not starting it again")
+                recentGuestRestarts = []
+                delegate?.virtualMachine(self, didErrorWithMessage: NSLocalizedString("The virtual machine restarted repeatedly and was stopped.", comment: "UTMQemuVirtualMachine"))
+                return
+            }
+            recentGuestRestarts.append(now)
+        }
+        logger.debug("Starting a new QEMU process after a restart")
+        // a disposable VM stays disposable, but loses its changes at the restart
+        requestVmStart(options: lastStartOptions.subtracting(.bootRecovery))
     }
     
     func qemuVM(_ qemuVM: QEMUVirtualMachine, didError error: Error) {

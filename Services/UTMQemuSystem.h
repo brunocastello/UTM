@@ -34,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL hasDebugLog;
 /// Extra variables for the QEMU process (per-guest tuning); applied on assignment.
 @property (nonatomic, nullable, copy) NSDictionary<NSString *, NSString *> *extraEnvironment;
+/// QEMU ended on a guest or monitor reset that asked to start the VM again (QEMU_REBOOT_EXIT_STATUS)
+@property (nonatomic, readonly) BOOL didRequestRestart;
 
 - (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithArguments:(NSArray<NSString *> *)arguments NS_UNAVAILABLE;

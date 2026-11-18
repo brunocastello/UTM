@@ -370,6 +370,8 @@ import Virtualization // for getting network interfaces
             "LC_HVDBT_PROFILE_SHIFT_HELPERS": "0", "LC_HVDBT_PROFILE_INVALIDATION": "0",
             "LC_HVDBT_PROFILE_COMPILE_INPUTS": "0", "LC_HVDBT_MMU_OBSERVATIONS": "0",
             "ENGINE_TRACE": "0",
+            // QEMU's exit status after a reset under -action reboot=shutdown
+            "QEMU_REBOOT_EXIT_STATUS": "75",
         ]
     }
 
@@ -586,6 +588,13 @@ import Virtualization // for getting network interfaces
             // route PIRQ F like VirtualIntelMac so Apple's 8254X driver keeps its link IRQ
             f("-global")
             f("ICH9-LPC.x-apic-pirq-f-native-only=on")
+        }
+        if isIntelMacGuest {
+            // a reset ends QEMU and UTM starts a new process, as VirtualIntelMac
+            // reboots: Hybrid Hypervisor would otherwise run the next boot's
+            // firmware on TCG with every RAM write tracked (minutes at the logo)
+            f("-action")
+            f("reboot=shutdown")
         }
     }
     
