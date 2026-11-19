@@ -132,6 +132,10 @@ if [ "$SDK" == "macosx" ]; then
     codesign --force --sign - --entitlements "$LAUNCHER_ENTITLEMENTS" --timestamp=none --options runtime "$BUILT_PATH/Contents/XPCServices/QEMUHelper.xpc/Contents/MacOS/QEMULauncher.app/Contents/MacOS/QEMULauncher"
     codesign --force --sign - --entitlements "$RENDERER_ENTITLEMENTS" --timestamp=none --options runtime "$BUILT_PATH/Contents/XPCServices/QEMUHelper.xpc/Contents/MacOS/QEMURenderServer.app/Contents/MacOS/QEMURenderServer"
     codesign --force --sign - --entitlements "$HELPER_ENTITLEMENTS" --timestamp=none --options runtime "$BUILT_PATH/Contents/XPCServices/QEMUHelper.xpc/Contents/MacOS/QEMUHelper"
+    # QEMU spawns the PVG helper, which then runs in the launcher's sandbox
+    if [ -f "$BUILT_PATH/Contents/MacOS/apple-gfx-helper" ]; then
+        codesign --force --sign - --entitlements "$BASEDIR/../QEMULauncher/apple-gfx-helper.entitlements" --timestamp=none "$BUILT_PATH/Contents/MacOS/apple-gfx-helper"
+    fi
     codesign --force --sign - --entitlements "$CLI_ENTITLEMENTS" --timestamp=none --options runtime "$BUILT_PATH/Contents/MacOS/utmctl"
     codesign --force --sign - --entitlements "$UTM_ENTITLEMENTS" --timestamp=none --options runtime "$BUILT_PATH/Contents/MacOS/UTM"
     rm "$UTM_ENTITLEMENTS"
