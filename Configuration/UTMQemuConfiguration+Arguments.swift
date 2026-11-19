@@ -411,6 +411,10 @@ import Virtualization // for getting network interfaces
         if FileManager.default.fileExists(atPath: llvm.path) {
             environment["PVG_HOST_AIR_LLVM"] = llvm.path
         }
+        // Mojave's OpenGL commands reach the PassthroughOpenGL executor through vim-gl-headless
+        if let frameworks = Bundle.main.privateFrameworksURL {
+            environment["VIM_PASSTHROUGH_OPENGL_INPROCESS_LIBRARY"] = frameworks.appendingPathComponent("VIMPassthroughOpenGLHost.framework/Versions/A/VIMPassthroughOpenGLHost").path
+        }
         return environment
     }
 
@@ -873,6 +877,11 @@ import Virtualization // for getting network interfaces
             "mem-path="
             resourceURL
             "share=on"
+            f()
+            // VirtualIntelMac's GL command transport (no display): the guest's GL engine
+            // selector uses PassthroughOpenGL when this device is present
+            f("-device")
+            "vim-gl-headless"
             f()
         }
     }
