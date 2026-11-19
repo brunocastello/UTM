@@ -1014,6 +1014,21 @@ build_vim_passthrough_opengl () {
     cp "$DIR/out/libVIMPassthroughOpenGLHost.dylib" "$PREFIX/lib/libVIMPassthroughOpenGLHost.dylib"
 }
 
+# VirtualIntelMac's out-of-process Intel PVG helper (scripts/build-pvg-oop-helper): an x86_64
+# binary QEMU spawns under Rosetta for apple-gfx-pci on Intel Mac guests; only system frameworks
+build_pvg_helper () {
+    if [ "$PLATFORM" != "macos" ] || [ "$ARCH" != "arm64" ] || [ ! -f "$QEMU_DIR/hw/display/apple-gfx-helper.m" ]; then
+        return
+    fi
+    echo "${GREEN}Building PVG out-of-process helper...${NC}"
+    mkdir -p "$PREFIX/bin"
+    env -u CFLAGS -u CPPFLAGS -u OBJCFLAGS -u LDFLAGS xcrun clang -arch x86_64 -mmacosx-version-min=11.0 -O2 \
+        -I "$QEMU_DIR/hw/display" -I "$QEMU_DIR/hw/display/compat" \
+        -framework Foundation -framework Metal -framework CoreGraphics \
+        "$QEMU_DIR/hw/display/apple-gfx-helper.m" "$QEMU_DIR/hw/display/apple-gfx-legacy-shadow.m" \
+        "$QEMU_DIR/hw/display/compat/PVGHostAIRRepair.m" -o "$PREFIX/bin/apple-gfx-helper"
+}
+
 fixup_all () {
     OLDIFS=$IFS
     IFS=$'\n'
@@ -1287,6 +1302,7 @@ build_spice_client
 build_vulkan_drivers
 build_d3d_drivers
 build_vim_passthrough_opengl
+build_pvg_helper
 fixup_all
 remove_shared_gst_plugins # another hack...
 echo "${GREEN}All done!${NC}"

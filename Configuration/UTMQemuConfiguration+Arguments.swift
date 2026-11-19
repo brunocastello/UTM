@@ -296,7 +296,7 @@ import Virtualization // for getting network interfaces
                         "vgamem_mb=\(radeonVramMib)"
                         "renderer=metal"
                         "romfile=" // no ROM, OpenFirmware properties are set in boot-command
-                    } else if let vgaRamSize = displays[0].vgaRamMib {
+                    } else if let vgaRamSize = displays[0].vgaRamMib, !isDisplayAppleGfx(display) {
                         "vgamem_mb=\(vgaRamSize)"
                     }
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
@@ -344,10 +344,26 @@ import Virtualization // for getting network interfaces
     /// CPU profile, TCG fast paths and Hybrid Hypervisor.
     var isIntelMacGuest: Bool {
         #if os(macOS) && arch(arm64)
-        return system.architecture == .x86_64 && displays.contains { isDisplayPassthroughOpenGL($0) }
+        return system.architecture == .x86_64 && displays.contains { isDisplayPassthroughOpenGL($0) || isDisplayAppleGfx($0) }
         #else
         return false
         #endif
+    }
+
+    /// Mac OS X Intel guest on the paravirtualized display (Mojave and later): VirtualIntelMac 2.2
+    /// runs the Intel guest protocol out of process, in its x86_64 `apple-gfx-helper` under Rosetta,
+    /// with Apple frameworks from the Intel guest kit.
+    private var isIntelMacAppleGfxGuest: Bool {
+        isIntelMacGuest && displays.contains { isDisplayAppleGfx($0) }
+    }
+
+    private func isDisplayAppleGfx(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        display.hardware.rawValue == "apple-gfx-pci"
+    }
+
+    /// Apple frameworks the Intel guest kit installs for the out-of-process helper.
+    private var appleGfxDonorURL: URL {
+        resourceURL.appendingPathComponent("pvg-donor", isDirectory: true)
     }
 
     /// Environment for the QEMU process, as VirtualIntelMac 2.2 sets it on Apple silicon.
@@ -372,7 +388,30 @@ import Virtualization // for getting network interfaces
             "ENGINE_TRACE": "0",
             // QEMU's exit status after a reset under -action reboot=shutdown
             "QEMU_REBOOT_EXIT_STATUS": "75",
+        ].merging(appleGfxEnvironment) { $1 }
+    }
+
+    /// VirtualIntelMac 2.2's out-of-process PVG settings (VIMSession.m).
+    private var appleGfxEnvironment: [String: String] {
+        guard isIntelMacAppleGfxGuest else {
+            return [:]
+        }
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/apple-gfx-helper")
+        let donor = appleGfxDonorURL
+        var environment = [
+            "PVG_OOP_HELPER": helper.path,
+            "PVG_OOP_DONOR": donor.appendingPathComponent("System/Library/Frameworks/ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics").path,
+            // panel capability, so the guest can offer HiDPI modes
+            "PVG_OOP_SCALE_FACTOR": "2", "PVG_APP_DISPLAY_SCALE": "2",
+            "PVG_PRESERVE_IOSURFACE": "1", "PVG_SHADOW_COALESCE": "1",
+            "PVG_SHADOW_MAX_CHUNK": "1048576", "PVG_SHADOW_TEXTURE_PAGING": "1",
         ]
+        // Mojave's Metal shaders need its own GPUCompiler to repair them (AIR); the kit installs it for Mojave
+        let llvm = donor.appendingPathComponent("System/Library/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib")
+        if FileManager.default.fileExists(atPath: llvm.path) {
+            environment["PVG_HOST_AIR_LLVM"] = llvm.path
+        }
+        return environment
     }
 
     /// The OpenGL passthrough bridge presents host-rendered IOSurfaces as Metal
@@ -713,6 +752,9 @@ import Virtualization // for getting network interfaces
             #endif
             // disable HPET because it causes issues for some OS and also hinders performance
             properties = properties.appendingDefaultPropertyName("hpet", value: "off")
+            if isIntelMacAppleGfxGuest {
+                properties = properties.appendingDefaultPropertyName("memory-backend", value: "pvg-ram")
+            }
         }
         if target == "virt" || target.hasPrefix("virt-") && !architecture.hasPrefix("riscv") {
             if #available(macOS 12.4, iOS 15.5, *, *) {
@@ -821,6 +863,18 @@ import Virtualization // for getting network interfaces
         f("-m")
         system.memorySize
         f()
+        if isIntelMacAppleGfxGuest {
+            // the helper maps guest RAM from a shared file descriptor; a file in the
+            // resource cache works inside the sandbox, unlike named POSIX shared memory
+            f("-object")
+            "memory-backend-file"
+            "id=pvg-ram"
+            "size=\(system.memorySize)M"
+            "mem-path="
+            resourceURL
+            "share=on"
+            f()
+        }
     }
     
     var hasCustomBios: Bool {
