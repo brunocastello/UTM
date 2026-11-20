@@ -117,10 +117,13 @@ The guest-side helpers are Intel builds only.
 
 ## File sharing
 
-With **Sharing → Mac File Sharing** on and the **Emulated** network:
+With **Sharing → Mac File Sharing** on, what UTM does depends on the VM's network:
 
-- QEMU forwards the guest's SMB port to a local port on the Mac (20000–29999, fixed for each VM).
-- UTM lists the guest in Finder under *Network* as "<VM name>-VM".
+- **Emulated** (the first Emulated network, if there are several): QEMU forwards the guest's SMB
+  port to a local port on the Mac (20000–29999, fixed for each VM), and UTM lists the guest in
+  Finder under *Network* as "<VM name>-VM".
+- **Shared, Bridged or Host Only:** the Mac reaches the guest directly, and the guest's own
+  Bonjour lists it in Finder under its computer name. UTM adds nothing.
 
 As in VirtualIntelMac, the guest is the server. Turn on **File Sharing** in the guest's
 System Preferences → Sharing, then under *Options* turn on SMB and your account.

@@ -34,7 +34,7 @@ struct VMConfigSharingView: View {
                 
                 #if os(macOS)
                 if isIntelMacGuest {
-                    DetailedSection("Mac File Sharing", description: "Turn on File Sharing (SMB) in the guest's Sharing preferences. Finder lists it under Network as the VM's name followed by -VM. Needs the Intel guest kit and the Emulated network.") {
+                    DetailedSection("Mac File Sharing", description: "Turn on File Sharing (SMB) in the guest's Sharing preferences. With the Emulated network, UTM lists it in Finder under Network as the VM's name followed by -VM; with Shared, Bridged or Host Only networking the guest appears there by its own name. Needs the Intel guest kit.") {
                         Toggle(isOn: $config.hasMacFileSharing, label: {
                             Text("Enable Mac File Sharing")
                         })
