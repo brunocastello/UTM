@@ -18,6 +18,7 @@ import Foundation
 #if os(macOS)
 import CoreGraphics // host display size for the PassthroughOpenGL panel
 import AppKit // NSScreen safe area (notch) for the PassthroughOpenGL panel
+import Carbon.HIToolbox // physical keyboard layout for Intel Mac guests
 import Virtualization // for getting network interfaces
 #endif
 
@@ -350,6 +351,20 @@ import Virtualization // for getting network interfaces
         }
     }
 
+    /// Physical layout of the host keyboard for QEMU's usb-kbd `apple-layout`
+    /// (VirtualIntelMac's VIMHostKeyboardLayout): ansi, iso or jis.
+    private static var hostKeyboardLayout: String {
+        #if os(macOS)
+        switch KBGetLayoutType(Int16(LMGetKbdType())) {
+        case PhysicalKeyboardLayoutType(kKeyboardISO): return "iso"
+        case PhysicalKeyboardLayoutType(kKeyboardJIS): return "jis"
+        default: return "ansi"
+        }
+        #else
+        return "ansi"
+        #endif
+    }
+
     /// Mac OS X Intel guest on the OpenGL passthrough card: gets VirtualIntelMac 2.2's
     /// CPU profile, TCG fast paths and Hybrid Hypervisor.
     var isIntelMacGuest: Bool {
@@ -381,7 +396,7 @@ import Virtualization // for getting network interfaces
         guard isIntelMacGuest else {
             return [:]
         }
-        return [
+        var environment = [
             // TCG fast paths (each is opt-in in QEMU)
             "PVG_TCG_TSO": "0", "PVG_TCG_LAZY_JMP_CACHE": "1", "PVG_TCG_KEEP_PHYS_TLB": "1",
             "PVG_TCG_INLINE_JMP_CACHE": "1", "PVG_TCG_NATIVE_FP_FLAGS": "0",
@@ -399,6 +414,11 @@ import Virtualization // for getting network interfaces
             // QEMU's exit status after a reset under -action reboot=shutdown
             "QEMU_REBOOT_EXIT_STATUS": "75",
         ].merging(appleGfxEnvironment) { $1 }
+        // guest RAM as POSIX shared memory: the sandbox allows names under the app group only
+        if let appGroup = appGroupIdentifier {
+            environment["QEMU_SHM_APP_GROUP"] = appGroup
+        }
+        return environment
     }
 
     /// VirtualIntelMac 2.2's out-of-process PVG settings (VIMSession.m).
@@ -420,10 +440,6 @@ import Virtualization // for getting network interfaces
         let llvm = donor.appendingPathComponent("System/Library/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib")
         if FileManager.default.fileExists(atPath: llvm.path) {
             environment["PVG_HOST_AIR_LLVM"] = llvm.path
-        }
-        // guest RAM as POSIX shared memory: the sandbox allows names under the app group only
-        if let appGroup = appGroupIdentifier {
-            environment["QEMU_SHM_APP_GROUP"] = appGroup
         }
         // Mojave's OpenGL commands reach the PassthroughOpenGL executor through vim-gl-headless
         if let frameworks = Bundle.main.privateFrameworksURL {
@@ -808,7 +824,7 @@ import Virtualization // for getting network interfaces
             #endif
             // disable HPET because it causes issues for some OS and also hinders performance
             properties = properties.appendingDefaultPropertyName("hpet", value: "off")
-            if isIntelMacAppleGfxGuest {
+            if isIntelMacGuest {
                 properties = properties.appendingDefaultPropertyName("memory-backend", value: "pvg-ram")
             }
         }
@@ -852,6 +868,17 @@ import Virtualization // for getting network interfaces
             f("PIIX4_PM.disable_s3=1") // applies for pc-i440fx-* types
             f("-global")
             f("ICH9-LPC.disable_s3=1") // applies for pc-q35-* types
+        }
+        if isIntelMacGuest {
+            // VirtualIntelMac: no reliable S3/S4 resume, so hibernation is not offered either
+            f("-global")
+            f("ICH9-LPC.disable_s4=1")
+        }
+        if isIntelMacGuest && !isIntelMacAppleGfxGuest {
+            // VirtualIntelMac (Snow Leopard … High Sierra): a period memory speed in the
+            // DIMM records its MacPro5,1 profile keeps
+            f("-smbios")
+            f("type=17,speed=1066")
         }
         if qemu.hasUefiBoot, let prefix = UTMQemuConfigurationQEMU.uefiImagePrefix(forArchitecture: system.architecture) {
             let secure = isSecureBootUsed ? "-secure" : ""
@@ -919,10 +946,11 @@ import Virtualization // for getting network interfaces
         f("-m")
         system.memorySize
         f()
-        if isIntelMacAppleGfxGuest {
-            // the helper maps guest RAM from a shared file descriptor. As VirtualIntelMac:
-            // POSIX shared memory (RAM only), named under the app group so the sandbox allows
-            // it (QEMU_SHM_APP_GROUP). Builds without an app group (unsigned) use a file.
+        if isIntelMacGuest {
+            // As VirtualIntelMac on Apple silicon, for every Intel Mac guest: guest RAM in
+            // POSIX shared memory, named under the app group so the sandbox allows it
+            // (QEMU_SHM_APP_GROUP). The PVG helper maps it from a shared file descriptor.
+            // Builds without an app group (unsigned) use a file.
             f("-object")
             if appGroupIdentifier != nil {
                 "memory-backend-shm"
@@ -938,6 +966,8 @@ import Virtualization // for getting network interfaces
                 "share=on"
             }
             f()
+        }
+        if isIntelMacAppleGfxGuest {
             // VirtualIntelMac's GL command transport (no display): the guest's GL engine
             // selector uses PassthroughOpenGL when this device is present
             f("-device")
@@ -1277,7 +1307,13 @@ import Virtualization // for getting network interfaces
             f("-device")
             f("usb-mouse,bus=usb-bus.0")
             f("-device")
-            f("usb-kbd,bus=usb-bus.0")
+            if isIntelMacGuest {
+                // Apple keyboard identity with the host's physical layout, as VirtualIntelMac,
+                // so Mac OS X maps ISO and JIS keys without asking for the keyboard type
+                f("usb-kbd,bus=usb-bus.0,apple-layout=\(Self.hostKeyboardLayout)")
+            } else {
+                f("usb-kbd,bus=usb-bus.0")
+            }
         }
         if isClassicMacNewWorld && input.hasGameController {
             // The host's game controller as a USB gamepad Mac OS X recognises
