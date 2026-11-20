@@ -61,10 +61,10 @@ index f6c2b6c..65e2a10 100644
      for(;;){@autoreleasepool {
          unsigned char bytes[4096];ssize_t count=read(fd,bytes,sizeof(bytes));
 diff --git a/Source/tools/opengl-guest-machine.h b/Source/tools/opengl-guest-machine.h
-index f83bb8d..01b907f 100644
+index f83bb8d..90fc3d7 100644
 --- a/Source/tools/opengl-guest-machine.h
 +++ b/Source/tools/opengl-guest-machine.h
-@@ -7,7 +7,12 @@
+@@ -7,9 +7,14 @@
  static inline BOOL VIMGuestHasPCIDevice(unsigned short vendorID,unsigned short deviceID){
      CFMutableDictionaryRef match=IOServiceMatching("IOPCIDevice");
      if(!match)return NO;
@@ -73,10 +73,14 @@ index f83bb8d..01b907f 100644
 +    const UInt32 vendor[]={vendorID},device[]={deviceID};
 +#else
      const unsigned char vendor[]={vendorID&255,vendorID>>8,0,0},device[]={deviceID&255,deviceID>>8,0,0};
+-    CFDataRef vendorData=CFDataCreate(NULL,vendor,sizeof(vendor));
+-    CFDataRef deviceData=CFDataCreate(NULL,device,sizeof(device));
 +#endif
-     CFDataRef vendorData=CFDataCreate(NULL,vendor,sizeof(vendor));
-     CFDataRef deviceData=CFDataCreate(NULL,device,sizeof(device));
++    CFDataRef vendorData=CFDataCreate(NULL,(const UInt8 *)vendor,sizeof(vendor));
++    CFDataRef deviceData=CFDataCreate(NULL,(const UInt8 *)device,sizeof(device));
      const void *keys[]={CFSTR("vendor-id"),CFSTR("device-id")};
+     const void *values[]={vendorData,deviceData};
+     CFDictionaryRef properties=CFDictionaryCreate(NULL,keys,values,2,
 @@ -19,7 +24,12 @@ static inline BOOL VIMGuestHasPCIDevice(unsigned short vendorID,unsigned short d
      io_service_t service=IOServiceGetMatchingService(kIOMasterPortDefault,match);
      if(!service)return NO;IOObjectRelease(service);return YES;
