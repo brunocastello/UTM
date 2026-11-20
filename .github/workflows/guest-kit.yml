@@ -3,6 +3,9 @@ name: Intel guest kits
 # OpenCore disk + GuestTools.iso per guest, and the Mojave support disc. Nothing is built on
 # the user's Mac; download the artifacts instead.
 on:
+  push:
+    branches: [ r300 ]
+    paths: [ 'guest-kit/**', .github/workflows/guest-kit.yml ]
   workflow_dispatch:
     inputs:
       guests:
@@ -22,7 +25,7 @@ jobs:
           python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' || brew install python@3.13
       - name: Build
         env:
-          GUESTS: ${{ inputs.guests }}
+          GUESTS: ${{ inputs.guests || 'snowleopard mavericks mojave' }}
         run: |
           set -e
           OUT="$RUNNER_TEMP/kits"; mkdir -p "$OUT"
