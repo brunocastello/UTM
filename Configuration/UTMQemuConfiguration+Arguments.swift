@@ -16,6 +16,7 @@
 
 import Foundation
 #if os(macOS)
+import CoreGraphics // host display size for the PassthroughOpenGL panel
 import Virtualization // for getting network interfaces
 #endif
 
@@ -325,6 +326,14 @@ import Virtualization // for getting network interfaces
                         "neptune=true"
                     }
                     f()
+                    #if os(macOS)
+                    if display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL {
+                        for global in passthroughOpenGLHostPanelGlobals {
+                            f("-global")
+                            f(global)
+                        }
+                    }
+                    #endif
                 }
             }
         }
@@ -420,6 +429,35 @@ import Virtualization // for getting network interfaces
 
     /// The OpenGL passthrough bridge presents host-rendered IOSurfaces as Metal
     /// scanouts, which reach the client through the GL SPICE display.
+    #if os(macOS)
+    /// VirtualIntelMac's guest driver publishes one native panel; start it at the host display's
+    /// resolution (Retina: HiDPI). The boot panel is bounded to 2560x1600 (scale 2 needs at least
+    /// 2048x1536); a larger host size follows once the driver opts into large scanout.
+    /// Guests without HiDPI (Snow Leopard): -global vmware-svga.passthrough-opengl-hidpi=off.
+    /// Placed before the user's arguments, so their own -global panel settings still win.
+    private var passthroughOpenGLHostPanelGlobals: [String] {
+        guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()) else {
+            return []
+        }
+        let pixelWidth = mode.pixelWidth, pixelHeight = mode.pixelHeight
+        guard pixelWidth >= 640, pixelHeight >= 400, mode.width > 0 else {
+            return []
+        }
+        let scale = pixelWidth > mode.width ? 2 : 1
+        var panelWidth = pixelWidth, panelHeight = pixelHeight
+        if pixelWidth > 2560 || pixelHeight > 1600 || (scale == 2 && (pixelWidth < 2048 || pixelHeight < 1536)) {
+            panelWidth = 2560
+            panelHeight = 1600
+        }
+        let prefix = "vmware-svga.passthrough-opengl-"
+        var globals = ["\(prefix)panel-width=\(panelWidth)", "\(prefix)panel-height=\(panelHeight)", "\(prefix)ui-scale=\(scale)"]
+        if (panelWidth, panelHeight) != (pixelWidth, pixelHeight) {
+            globals += ["\(prefix)host-width=\(pixelWidth)", "\(prefix)host-height=\(pixelHeight)", "\(prefix)host-scale=\(scale)"]
+        }
+        return globals
+    }
+    #endif
+
     private func isDisplayPassthroughOpenGL(_ display: UTMQemuConfigurationDisplay) -> Bool {
         #if os(macOS)
         return display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL
