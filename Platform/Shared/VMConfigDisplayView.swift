@@ -47,7 +47,7 @@ struct VMConfigDisplayView: View {
                     if config.hardware.rawValue == "vmware-svga" {
                         Toggle("OpenGL Passthrough", isOn: $config.isPassthroughOpenGL)
                         if config.isPassthroughOpenGL {
-                            Text("Mac OS X Intel guests need the VMsvga2 drivers.")
+                            Text("Mac OS X Intel guests need the VMsvga2 drivers. Retina Mode (under Scaling) gives Mac OS X 10.7.4 and later its Retina resolutions; turn it off for 1x resolutions, as Snow Leopard needs.")
                                 .font(.footnote)
                         }
                     }

@@ -17,6 +17,7 @@
 import Foundation
 #if os(macOS)
 import CoreGraphics // host display size for the PassthroughOpenGL panel
+import AppKit // NSScreen safe area (notch) for the PassthroughOpenGL panel
 import Virtualization // for getting network interfaces
 #endif
 
@@ -328,7 +329,7 @@ import Virtualization // for getting network interfaces
                     f()
                     #if os(macOS)
                     if display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL {
-                        for global in passthroughOpenGLHostPanelGlobals {
+                        for global in passthroughOpenGLHostPanelGlobals(retina: display.isNativeResolution) {
                             f("-global")
                             f(global)
                         }
@@ -437,24 +438,33 @@ import Virtualization // for getting network interfaces
     /// VirtualIntelMac's guest driver publishes one native panel; start it at the host display's
     /// resolution (Retina: HiDPI). The boot panel is bounded to 2560x1600 (scale 2 needs at least
     /// 2048x1536); a larger host size follows once the driver opts into large scanout.
-    /// Guests without HiDPI (Snow Leopard): -global vmware-svga.passthrough-opengl-hidpi=off.
+    /// The size is the full-screen area: on a Mac with a notch, full-screen windows stay below it,
+    /// so a panel that includes the notch strip would be letterboxed.
+    /// Retina Mode off (Snow Leopard, or 1x resolutions): passthrough-opengl-hidpi=off.
     /// Placed before the user's arguments, so their own -global panel settings still win.
-    private var passthroughOpenGLHostPanelGlobals: [String] {
+    private func passthroughOpenGLHostPanelGlobals(retina: Bool) -> [String] {
+        let prefix = "vmware-svga.passthrough-opengl-"
+        let hidpi = retina ? [] : ["\(prefix)hidpi=off"]
         guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()) else {
-            return []
+            return hidpi
         }
-        let pixelWidth = mode.pixelWidth, pixelHeight = mode.pixelHeight
+        let scale = mode.pixelWidth > mode.width ? 2 : 1
+        var notch = 0
+        if #available(macOS 12, *), let screen = NSScreen.screens.first {
+            notch = Int(screen.safeAreaInsets.top.rounded(.up))
+        }
+        // even pixel sizes, as VirtualIntelMac's display agent requires
+        let pixelWidth = mode.pixelWidth & ~1
+        let pixelHeight = (mode.pixelHeight * (mode.height - notch) / max(mode.height, 1)) & ~1
         guard pixelWidth >= 640, pixelHeight >= 400, mode.width > 0 else {
-            return []
+            return hidpi
         }
-        let scale = pixelWidth > mode.width ? 2 : 1
         var panelWidth = pixelWidth, panelHeight = pixelHeight
         if pixelWidth > 2560 || pixelHeight > 1600 || (scale == 2 && (pixelWidth < 2048 || pixelHeight < 1536)) {
             panelWidth = 2560
             panelHeight = 1600
         }
-        let prefix = "vmware-svga.passthrough-opengl-"
-        var globals = ["\(prefix)panel-width=\(panelWidth)", "\(prefix)panel-height=\(panelHeight)", "\(prefix)ui-scale=\(scale)"]
+        var globals = hidpi + ["\(prefix)panel-width=\(panelWidth)", "\(prefix)panel-height=\(panelHeight)", "\(prefix)ui-scale=\(scale)"]
         if (panelWidth, panelHeight) != (pixelWidth, pixelHeight) {
             globals += ["\(prefix)host-width=\(pixelWidth)", "\(prefix)host-height=\(pixelHeight)", "\(prefix)host-scale=\(scale)"]
         }
