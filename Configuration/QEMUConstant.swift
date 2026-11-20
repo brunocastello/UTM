@@ -155,17 +155,20 @@ extension AnyQEMUConstant: QEMUSerialDevice {}
 enum QEMUScaler: String, CaseIterable, QEMUConstant {
     case linear = "Linear"
     case nearest = "Nearest"
+    /// Upscaling only: linear blending limited to the edges of each guest pixel.
+    case sharpBilinear = "SharpBilinear"
     
     var prettyValue: String {
         switch self {
         case .linear: return NSLocalizedString("Linear", comment: "UTMQemuConstants")
         case .nearest: return NSLocalizedString("Nearest Neighbor", comment: "UTMQemuConstants")
+        case .sharpBilinear: return NSLocalizedString("Sharp Bilinear", comment: "UTMQemuConstants")
         }
     }
     
     var metalSamplerMinMagFilter: MTLSamplerMinMagFilter {
         switch self {
-        case .linear: return .linear
+        case .linear, .sharpBilinear: return .linear
         case .nearest: return .nearest
         }
     }

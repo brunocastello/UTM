@@ -70,6 +70,11 @@ struct VMConfigDisplayView: View {
                     Toggle(isOn: $config.isNativeResolution, label: {
                         Text("Retina Mode")
                     })
+                    #if os(macOS)
+                    Toggle(isOn: $config.isIntegerScaling, label: {
+                        Text("Integer Scaling")
+                    }).help("Enlarge the display only by whole multiples, so every pixel has the same size.")
+                    #endif
                 }
             }
         }.disableAutocorrection(true)

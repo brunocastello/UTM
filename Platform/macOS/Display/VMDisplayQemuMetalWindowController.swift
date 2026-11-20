@@ -102,7 +102,7 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
         } else if let maxFps = self.window?.screen?.maximumFramesPerSecond {
             metalView.preferredFramesPerSecond = maxFps
         }
-        renderer.changeUpscaler(displayConfig?.upscalingFilter.metalSamplerMinMagFilter ?? .linear, downscaler: displayConfig?.downscalingFilter.metalSamplerMinMagFilter ?? .linear)
+        renderer.changeUpscaler(displayConfig?.upscalingFilter.metalSamplerMinMagFilter ?? .linear, downscaler: displayConfig?.downscalingFilter.metalSamplerMinMagFilter ?? .linear, sharp: displayConfig?.upscalingFilter == .sharpBilinear)
         vmDisplay?.addRenderer(renderer) // can be nil if primary
         metalView.delegate = renderer
         metalView.inputDelegate = self
@@ -354,7 +354,11 @@ extension VMDisplayQemuMetalWindowController {
         let targetContentSize = window.contentRect(forFrameRect: CGRect(origin: .zero, size: frameSize)).size
         let targetScaleX = targetContentSize.width * currentScreenScale / displaySize.width
         let targetScaleY = targetContentSize.height * currentScreenScale / displaySize.height
-        let targetScale = min(targetScaleX, targetScaleY)
+        var targetScale = min(targetScaleX, targetScaleY)
+        if displayConfig?.isIntegerScaling == true && targetScale >= 1 {
+            // whole multiples only when enlarging; the renderer centres the image
+            targetScale = floor(targetScale)
+        }
         let scaledSize = CGSize(width: displaySize.width * targetScale / currentScreenScale, height: displaySize.height * targetScale / currentScreenScale)
         let targetFrameSize = window.frameRect(forContentRect: CGRect(origin: .zero, size: scaledSize)).size
         renderer.viewportScale = targetScale

@@ -38,6 +38,10 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
     /// Filter to use when downscaling.
     var downscalingFilter: QEMUScaler = .linear
     
+    /// If true, the host scales the guest display only by whole multiples (1x, 2x, …) when it
+    /// enlarges it, so every guest pixel is the same size; the rest of the window stays black.
+    var isIntegerScaling: Bool = false
+    
     /// If true, use the true (retina) resolution of the display. Otherwise, use the percieved resolution.
     var isNativeResolution: Bool = false
     
@@ -55,6 +59,7 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         case downscalingFilter = "DownscalingFilter"
         case isNativeResolution = "NativeResolution"
         case isPassthroughOpenGL = "PassthroughOpenGL"
+        case isIntegerScaling = "IntegerScaling"
     }
     
     init() {
@@ -69,6 +74,7 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         downscalingFilter = try values.decode(QEMUScaler.self, forKey: .downscalingFilter)
         isNativeResolution = try values.decode(Bool.self, forKey: .isNativeResolution)
         isPassthroughOpenGL = try values.decodeIfPresent(Bool.self, forKey: .isPassthroughOpenGL) ?? false
+        isIntegerScaling = try values.decodeIfPresent(Bool.self, forKey: .isIntegerScaling) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -81,6 +87,9 @@ struct UTMQemuConfigurationDisplay: Codable, Identifiable {
         try container.encode(isNativeResolution, forKey: .isNativeResolution)
         if isPassthroughOpenGL {
             try container.encode(isPassthroughOpenGL, forKey: .isPassthroughOpenGL)
+        }
+        if isIntegerScaling {
+            try container.encode(isIntegerScaling, forKey: .isIntegerScaling)
         }
     }
 }
