@@ -153,6 +153,7 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     @MainActor private var gamepadBridge: UTMGamepadBridge?
     #if os(macOS)
     @MainActor private var intelMacClipboard: UTMIntelMacClipboard?
+    @MainActor private var macFileSharing: UTMMacFileSharingService?
     #endif
     #endif
 
@@ -539,6 +540,16 @@ extension UTMQemuVirtualMachine {
                 self.intelMacClipboard = clipboard
             }
         }
+        if await config.isMacFileSharingUsed {
+            let name = await config.information.name
+            let uuid = await config.information.uuid
+            let port = await config.macFileSharingPort
+            await MainActor.run {
+                let sharing = UTMMacFileSharingService(name: name, uuid: uuid, port: port)
+                sharing.start()
+                self.macFileSharing = sharing
+            }
+        }
         #endif
         self.isRunningAsDisposible = isRunningAsDisposible
         
@@ -885,6 +896,8 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
             gamepadBridge = nil
             intelMacClipboard?.stop()
             intelMacClipboard = nil
+            macFileSharing?.stop()
+            macFileSharing = nil
         }
         #endif
         ioService = nil

@@ -244,6 +244,7 @@
 		84A0A8852A47D52E0038F329 /* UTMQemuPort.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A0A8822A47D52E0038F329 /* UTMQemuPort.swift */; };
 		CE9A0A142EC9A0A100C0FFEE /* UTMGamepadBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE9A0A112EC9A0A100C0FFEE /* UTMGamepadBridge.swift */; };
 		CE9A0A162EC9A0A100C0FFEE /* UTMIntelMacClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE9A0A152EC9A0A100C0FFEE /* UTMIntelMacClipboard.swift */; };
+		CE9A0A182EC9A0A100C0FFEE /* UTMMacFileSharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE9A0A172EC9A0A100C0FFEE /* UTMMacFileSharingService.swift */; };
 		84A0A8882A47D5C50038F329 /* QEMUKit in Frameworks */ = {isa = PBXBuildFile; productRef = 84A0A8872A47D5C50038F329 /* QEMUKit */; };
 		84A0A88A2A47D5D10038F329 /* QEMUKit in Frameworks */ = {isa = PBXBuildFile; productRef = 84A0A8892A47D5D10038F329 /* QEMUKit */; };
 		84A0A88C2A47D5D70038F329 /* QEMUKit in Frameworks */ = {isa = PBXBuildFile; productRef = 84A0A88B2A47D5D70038F329 /* QEMUKit */; };
@@ -1918,6 +1919,7 @@
 		84A0A8822A47D52E0038F329 /* UTMQemuPort.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UTMQemuPort.swift; sourceTree = "<group>"; };
 		CE9A0A112EC9A0A100C0FFEE /* UTMGamepadBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UTMGamepadBridge.swift; sourceTree = "<group>"; };
 		CE9A0A152EC9A0A100C0FFEE /* UTMIntelMacClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UTMIntelMacClipboard.swift; sourceTree = "<group>"; };
+		CE9A0A172EC9A0A100C0FFEE /* UTMMacFileSharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UTMMacFileSharingService.swift; sourceTree = "<group>"; };
 		84A381A9268CB30C0048EE4D /* VMDrivesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VMDrivesSettingsView.swift; sourceTree = "<group>"; };
 		84A57CB130641C6800BA5139 /* iOSHelper.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = iOSHelper.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		84A57CBF30641C9100BA5139 /* iOSHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSHelper.swift; sourceTree = "<group>"; };
@@ -3115,6 +3117,7 @@
 				84A0A8822A47D52E0038F329 /* UTMQemuPort.swift */,
 				CE9A0A112EC9A0A100C0FFEE /* UTMGamepadBridge.swift */,
 				CE9A0A152EC9A0A100C0FFEE /* UTMIntelMacClipboard.swift */,
+				CE9A0A172EC9A0A100C0FFEE /* UTMMacFileSharingService.swift */,
 				CE03D05424D90BE000F76B84 /* UTMQemuSystem.h */,
 				CE03D05024D90B4E00F76B84 /* UTMQemuSystem.m */,
 				CEE8B4C12B71DF4C0035AE86 /* UTMQemuSystemBackends.h */,
@@ -4269,6 +4272,7 @@
 				84A0A8852A47D52E0038F329 /* UTMQemuPort.swift in Sources */,
 				CE9A0A142EC9A0A100C0FFEE /* UTMGamepadBridge.swift in Sources */,
 				CE9A0A162EC9A0A100C0FFEE /* UTMIntelMacClipboard.swift in Sources */,
+				CE9A0A182EC9A0A100C0FFEE /* UTMMacFileSharingService.swift in Sources */,
 				8432329628C2ED9000CFBC97 /* FileBrowseField.swift in Sources */,
 				CE88A09D2E1DDB4200EAA28E /* UTMASIFImage.m in Sources */,
 				848A98C2286A2257006F0550 /* UTMAppleConfigurationMacPlatform.swift in Sources */,

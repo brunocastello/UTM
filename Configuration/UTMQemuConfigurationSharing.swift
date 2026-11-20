@@ -30,10 +30,15 @@ struct UTMQemuConfigurationSharing: Codable {
     /// SPICE clipboard sharing.
     var hasClipboardSharing: Bool = false
     
+    /// Mac OS X Intel guests (VirtualIntelMac guest kit): forward the guest's SMB File Sharing to a
+    /// local port on the host and list it in Finder (Emulated network only).
+    var hasMacFileSharing: Bool = false
+    
     enum CodingKeys: String, CodingKey {
         case directoryShareMode = "DirectoryShareMode"
         case isDirectoryShareReadOnly = "DirectoryShareReadOnly"
         case hasClipboardSharing = "ClipboardSharing"
+        case hasMacFileSharing = "MacFileSharing"
     }
     
     init() {
@@ -44,6 +49,7 @@ struct UTMQemuConfigurationSharing: Codable {
         directoryShareMode = try values.decode(QEMUFileShareMode.self, forKey: .directoryShareMode)
         isDirectoryShareReadOnly = try values.decode(Bool.self, forKey: .isDirectoryShareReadOnly)
         hasClipboardSharing = try values.decode(Bool.self, forKey: .hasClipboardSharing)
+        hasMacFileSharing = try values.decodeIfPresent(Bool.self, forKey: .hasMacFileSharing) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -51,6 +57,9 @@ struct UTMQemuConfigurationSharing: Codable {
         try container.encode(directoryShareMode, forKey: .directoryShareMode)
         try container.encode(isDirectoryShareReadOnly, forKey: .isDirectoryShareReadOnly)
         try container.encode(hasClipboardSharing, forKey: .hasClipboardSharing)
+        if hasMacFileSharing {
+            try container.encode(hasMacFileSharing, forKey: .hasMacFileSharing)
+        }
     }
 }
 
