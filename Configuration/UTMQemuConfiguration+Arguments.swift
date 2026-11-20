@@ -420,6 +420,10 @@ import Virtualization // for getting network interfaces
         if FileManager.default.fileExists(atPath: llvm.path) {
             environment["PVG_HOST_AIR_LLVM"] = llvm.path
         }
+        // guest RAM as POSIX shared memory: the sandbox allows names under the app group only
+        if let appGroup = appGroupIdentifier {
+            environment["QEMU_SHM_APP_GROUP"] = appGroup
+        }
         // Mojave's OpenGL commands reach the PassthroughOpenGL executor through vim-gl-headless
         if let frameworks = Bundle.main.privateFrameworksURL {
             environment["VIM_PASSTHROUGH_OPENGL_INPROCESS_LIBRARY"] = frameworks.appendingPathComponent("VIMPassthroughOpenGLHost.framework/Versions/A/VIMPassthroughOpenGLHost").path
@@ -906,15 +910,23 @@ import Virtualization // for getting network interfaces
         system.memorySize
         f()
         if isIntelMacAppleGfxGuest {
-            // the helper maps guest RAM from a shared file descriptor; a file in the
-            // resource cache works inside the sandbox, unlike named POSIX shared memory
+            // the helper maps guest RAM from a shared file descriptor. As VirtualIntelMac:
+            // POSIX shared memory (RAM only), named under the app group so the sandbox allows
+            // it (QEMU_SHM_APP_GROUP). Builds without an app group (unsigned) use a file.
             f("-object")
-            "memory-backend-file"
-            "id=pvg-ram"
-            "size=\(system.memorySize)M"
-            "mem-path="
-            resourceURL
-            "share=on"
+            if appGroupIdentifier != nil {
+                "memory-backend-shm"
+                "id=pvg-ram"
+                "size=\(system.memorySize)M"
+                "share=on"
+            } else {
+                "memory-backend-file"
+                "id=pvg-ram"
+                "size=\(system.memorySize)M"
+                "mem-path="
+                resourceURL
+                "share=on"
+            }
             f()
             // VirtualIntelMac's GL command transport (no display): the guest's GL engine
             // selector uses PassthroughOpenGL when this device is present
