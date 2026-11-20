@@ -2,6 +2,11 @@
 // Objective-C (NeXT runtime) on Mac OS X 10.4/10.5 PowerPC.
 #import <Foundation/Foundation.h>
 
+// No ARC: bridged casts are plain casts.
+#define __bridge
+#define __bridge_transfer
+#define __bridge_retained
+
 static inline void UTMPoolDrain(NSAutoreleasePool **pool) { [*pool drain]; }
 #define UTM_POOL_CLEANUP __attribute__((cleanup(UTMPoolDrain)))
 

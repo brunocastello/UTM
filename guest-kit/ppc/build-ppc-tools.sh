@@ -16,7 +16,7 @@ S="$WORK/vim/Source"
 git -C "$WORK/vim" apply "$HERE/vim-ppc.patch"
 python3 "$HERE/desugar-objc.py" "$S"/tools/*.m "$S"/tools/*.h
 mkdir -p "$OUT" "$WORK/obj"
-FLAGS=(-mmacosx-version-min=10.4 -isysroot "$SDK" -O2 -fnext-runtime -fno-common -Wno-deprecated-declarations)
+FLAGS=(-mmacosx-version-min=10.4 -isysroot "$SDK" -O2 -std=gnu11 -fnext-runtime -fobjc-exceptions -fno-common -Wno-deprecated-declarations)
 OBJC=(-x objective-c -include "$HERE/utm-ppc-prefix.h" -include "$S/tools/opengl-period-foundation.h")
 status=0
 c() { echo "+ $*"; "$CC" "$@" || status=1; }

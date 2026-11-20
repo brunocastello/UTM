@@ -8,6 +8,7 @@ literals and no @autoreleasepool. This rewrites, outside strings and comments:
   @(expr)             -> UTMBox(expr)          (utm-ppc-prefix.h: _Generic by type)
   @YES / @NO / @123   -> [NSNumber numberWithBool:YES] / ... / [NSNumber numberWithInt:123]
   @autoreleasepool {  -> { NSAutoreleasePool *utm_pool_N UTM_POOL_CLEANUP = [NSAutoreleasePool new];
+  NSClass.method      -> [NSClass method]      (class dot syntax)
 The pool is drained when its scope ends, including return/break/continue.
 Usage: desugar-objc.py FILE...   (rewrites in place)
 """
@@ -91,6 +92,11 @@ class Rewriter:
                 i = j
                 continue
             if s[i] != '@':
+                m = re.match(r'(NS[A-Z]\w*)\.([a-z]\w*)', s[i:])
+                if m and (i == 0 or not (s[i - 1].isalnum() or s[i - 1] in '_.')):
+                    out.append('[%s %s]' % (m.group(1), m.group(2)))
+                    i += m.end()
+                    continue
                 out.append(s[i])
                 i += 1
                 continue
