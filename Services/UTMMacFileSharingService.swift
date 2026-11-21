@@ -55,30 +55,31 @@ final class UTMMacFileSharingService {
 
     func start() {
         stop()
+        let noError = DNSServiceErrorType(kDNSServiceErr_NoError)
         var loopback = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
         var record: DNSRecordRef?
         var status = DNSServiceCreateConnection(&addressConnection)
-        if status == kDNSServiceErr_NoError, let connection = addressConnection {
+        if status == noError, let connection = addressConnection {
             status = DNSServiceSetDispatchQueue(connection, .main)
         }
-        if status == kDNSServiceErr_NoError, let connection = addressConnection {
+        if status == noError, let connection = addressConnection {
             status = DNSServiceRegisterRecord(connection, &record, DNSServiceFlags(kDNSServiceFlagsUnique),
-                                              UInt32(kDNSServiceInterfaceIndexLocalOnly), hostname,
+                                              UInt32.max /* kDNSServiceInterfaceIndexLocalOnly */, hostname,
                                               UInt16(kDNSServiceType_A), UInt16(kDNSServiceClass_IN),
                                               UInt16(MemoryLayout<in_addr>.size), &loopback, 120,
                                               { _, _, _, _, _ in }, nil)
         }
-        if status == kDNSServiceErr_NoError {
+        if status == noError {
             // no automatic renaming: a name clash must not point at another VM
             status = DNSServiceRegister(&service, DNSServiceFlags(kDNSServiceFlagsNoAutoRename),
-                                        UInt32(kDNSServiceInterfaceIndexLocalOnly), instance, "_smb._tcp.", "local.",
+                                        UInt32.max /* kDNSServiceInterfaceIndexLocalOnly */, instance, "_smb._tcp.", "local.",
                                         hostname, port.bigEndian, 0, nil,
                                         { _, _, _, _, _, _, _ in }, nil)
         }
-        if status == kDNSServiceErr_NoError, let service = service {
+        if status == noError, let service = service {
             status = DNSServiceSetDispatchQueue(service, .main)
         }
-        if status != kDNSServiceErr_NoError {
+        if status != noError {
             logger.error("Mac File Sharing: cannot publish \(instance) (DNS-SD error \(status))")
             stop()
         } else {

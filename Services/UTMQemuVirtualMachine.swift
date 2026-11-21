@@ -151,10 +151,10 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     #if os(macOS)
     /// Host game controller for the guest's USB gamepad
     @MainActor private var gamepadBridge: UTMGamepadBridge?
-    #if os(macOS)
+    /// Text clipboard for Mac OS X guests with VirtualIntelMac's helpers
     @MainActor private var intelMacClipboard: UTMIntelMacClipboard?
+    /// Finder listing of a Mac OS X guest's forwarded SMB File Sharing
     @MainActor private var macFileSharing: UTMMacFileSharingService?
-    #endif
     #endif
 
     private let qemuVM = QEMUVirtualMachine()
@@ -532,8 +532,10 @@ extension UTMQemuVirtualMachine {
                 self.gamepadBridge = bridge
             }
         }
-        let hasIntelMacClipboard = await (config.isIntelMacPassthroughGuest || config.isMacOSXPPCGuest) && config.sharing.hasClipboardSharing
-        if hasIntelMacClipboard, let ioService = interface as? UTMSpiceIO {
+        let isIntelMacPassthroughGuest = await config.isIntelMacPassthroughGuest
+        let isMacOSXPPCGuest = await config.isMacOSXPPCGuest
+        let hasClipboardSharing = await config.sharing.hasClipboardSharing
+        if (isIntelMacPassthroughGuest || isMacOSXPPCGuest) && hasClipboardSharing, let ioService = interface as? UTMSpiceIO {
             await MainActor.run {
                 let clipboard = UTMIntelMacClipboard(vm: self, ioService: ioService)
                 clipboard.start()
