@@ -226,7 +226,12 @@ final class UTMIntelMacClipboard: NSObject {
             let input = try JSONSerialization.data(withJSONObject: configuration)
             token = newToken
             consoleUID = uid
-            let (result, _) = try await run(agent, Self.helperPath, ["--provision-stdin"], input: input, timeout: 120)
+            let result: Int
+            if transport == "virtio-serial" {
+                result = try await provisionFromFile(agent, configuration: input)
+            } else {
+                result = try await run(agent, Self.helperPath, ["--provision-stdin"], input: input, timeout: 120).0
+            }
             guard token == newToken else {
                 return
             }
@@ -242,6 +247,34 @@ final class UTMIntelMacClipboard: NSObject {
                 fail()
             }
         }
+    }
+
+    /// VirtualIntelMac's helper for Mojave and later only takes `--provision <file>`: as VirtualIntelMac
+    /// does, write the configuration through the agent to a private file (root, 0600) and pass its path.
+    private func provisionFromFile(_ agent: QEMUGuestAgent, configuration: Data) async throws -> Int {
+        let (status, output) = try await run(agent, "/usr/bin/mktemp", ["-d", "/private/var/tmp/utm-clipboard.XXXXXX"], timeout: 15)
+        guard status == 0, let directory = output.flatMap({ String(data: $0, encoding: .utf8) })?
+                .trimmingCharacters(in: .whitespacesAndNewlines), directory.hasPrefix("/private/var/tmp/utm-clipboard.") else {
+            return status == 0 ? 74 : status
+        }
+        defer {
+            Task { _ = try? await run(agent, "/bin/rm", ["-rf", directory], timeout: 15) }
+        }
+        let path = directory + "/config.json"
+        let handle = try await agent.guestFileOpen(path, mode: "w")
+        do {
+            _ = try await agent.guestFileWrite(handle, data: configuration)
+        } catch {
+            try? await agent.guestFileClose(handle)
+            throw error
+        }
+        try await agent.guestFileClose(handle)
+        // guest-file-open follows the agent's umask; the helper only reads a private file
+        let (mode, _) = try await run(agent, "/bin/chmod", ["0600", path], timeout: 15)
+        guard mode == 0 else {
+            return mode
+        }
+        return try await run(agent, Self.helperPath, ["--provision", path], timeout: 60).0
     }
 
     // MARK: - Protocol
