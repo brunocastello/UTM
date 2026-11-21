@@ -22,14 +22,15 @@ import CocoaSpiceNoUsb
 import CocoaSpice
 #endif
 
-/// Text clipboard sharing with a Mac OS X Intel guest (Snow Leopard … High Sierra) through
-/// VirtualIntelMac 2.2's guest helpers, installed by the Intel guest kit.
+/// Text clipboard sharing with a Mac OS X guest through VirtualIntelMac 2.2's guest helpers:
+/// Intel (Snow Leopard … High Sierra, helpers on the COM ports) and PowerPC Tiger/Leopard
+/// (UTM's PowerPC build of the helpers, on PCI serial ports), installed by the guest kits.
 ///
 /// Port of VirtualIntelMac's VIMClipboardBridge and the provisioning in VIMSession (MIT):
 /// - The guest's root agent (`opengl-guest-agent`, QGA protocol on COM2) runs
 ///   `guest-clipboard --provision-stdin` with a fresh token once a user is logged in. The
-///   helper then starts a job in that user's session, which opens COM1.
-/// - COM1 reaches UTM as the `org.vim.clipboard` SPICE port and carries newline-delimited
+///   helper then starts a job in that user's session, which opens its serial port.
+/// - That port reaches UTM as the `org.vim.clipboard` SPICE port and carries newline-delimited
 ///   JSON, protocol 2: the helper authenticates with the token (`hello`), then both sides
 ///   exchange `text` messages; `ping`/`pong` detect a helper that went away.
 /// Host text goes to the guest only while UTM is the active app, as in VirtualIntelMac.

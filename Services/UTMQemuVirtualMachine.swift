@@ -532,7 +532,7 @@ extension UTMQemuVirtualMachine {
                 self.gamepadBridge = bridge
             }
         }
-        let hasIntelMacClipboard = await config.isIntelMacPassthroughGuest && config.sharing.hasClipboardSharing
+        let hasIntelMacClipboard = await (config.isIntelMacPassthroughGuest || config.isMacOSXPPCGuest) && config.sharing.hasClipboardSharing
         if hasIntelMacClipboard, let ioService = interface as? UTMSpiceIO {
             await MainActor.run {
                 let clipboard = UTMIntelMacClipboard(vm: self, ioService: ioService)
