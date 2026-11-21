@@ -73,6 +73,11 @@ final class UTMIntelMacClipboard: NSObject {
     /// Transport the guest helper expects (VirtualIntelMac's `Transport`): VirtIO console on
     /// Mojave and later, serial port on older guests.
     private let transport: String
+    /// A VirtIO console port reaches UTM only once the guest opens it, i.e. after the helper
+    /// starts; a serial port is always there. Provisioning can't wait for a VirtIO port.
+    private var isPortReady: Bool {
+        port != nil || transport == "virtio-serial"
+    }
 
     private let isDisplayPowerOnly: Bool
     /// Called with `true` when the guest display sleeps and `false` when it wakes or the
@@ -121,9 +126,15 @@ final class UTMIntelMacClipboard: NSObject {
         guard newPort !== port else {
             return
         }
+        // the helper we provisioned (or are provisioning) opened its VirtIO port: keep its token
+        let isProvisionedHelper = port == nil && newPort != nil && token != nil
         port?.delegate = nil
         resetConnection()
-        token = nil
+        if isProvisionedHelper {
+            handshakeDeadline = Date(timeIntervalSinceNow: 30)
+        } else {
+            token = nil
+        }
         port = newPort
         port?.delegate = self
     }
@@ -166,7 +177,7 @@ final class UTMIntelMacClipboard: NSObject {
             return
         }
         // look for a logged-in user every 5 s until the helper connects
-        if port != nil && token == nil && !isProvisioning && retryAfter.timeIntervalSinceNow < 0 && tickCount % (isDisplayPowerOnly ? 5 : 25) == 0 {
+        if isPortReady && token == nil && !isProvisioning && retryAfter.timeIntervalSinceNow < 0 && tickCount % (isDisplayPowerOnly ? 5 : 25) == 0 {
             Task { await provision() }
         }
     }
@@ -203,7 +214,7 @@ final class UTMIntelMacClipboard: NSObject {
                 }
                 uid = consoleUser
             }
-            guard port != nil, token == nil else {
+            guard isPortReady, token == nil else {
                 return
             }
             let newToken = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
