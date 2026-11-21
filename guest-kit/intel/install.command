@@ -135,6 +135,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -rf /private/var/db/com.virtualintelmac.clipboard
   remove_file_sharing
   pmset -a disablesleep 0 >/dev/null 2>&1 || true
+  [ "$GUEST" = snowleopard ] && defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
   [ -f "$MSDOS_BACKUP" ] && cp "$MSDOS_BACKUP" "$MSDOS" && chown root:wheel "$MSDOS" && chmod 644 "$MSDOS"
   rebuild_caches
   echo "Apple's OpenGL engine restored. Restart the Mac."
@@ -214,6 +215,16 @@ register_esp_probe
 #    turns both off); display sleep is unchanged.
 pmset -a sleep 0 >/dev/null 2>&1 || true
 pmset -a disablesleep 1 >/dev/null 2>&1 || true
+
+# 9. Snow Leopard: no Quartz GL backing stores. The firmware's AccelCaps (VirtualIntelMac's
+#    value, bit 1 for Mountain Lion's menu filters) lets 10.6 draw windows through GL, and
+#    the pulsing default button ("Done" in Sharing -> File Sharing -> Options) then renders
+#    with a washed-out fill and unsmoothed text. Off for every user and app; CPU drawing
+#    is what 10.6 uses by default on real Macs.
+if [ "$GUEST" = snowleopard ]; then
+  defaults write /Library/Preferences/.GlobalPreferences QuartzGLEnable -bool NO
+  chmod 644 /Library/Preferences/.GlobalPreferences.plist
+fi
 
 rebuild_caches
 echo "Installed. Restart the Mac to use PassthroughOpenGL (Quartz Extreme + OpenGL)."
