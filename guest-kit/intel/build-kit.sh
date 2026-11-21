@@ -105,6 +105,24 @@ echo "==> Building the $LABEL OpenCore disk (VirtualIntelMac build-opengl-firmwa
 PYTHONPATH="$WORK/vim/Source/scripts" "$PY" "$WORK/vim/Source/scripts/build-opengl-firmware.py" \
   --guest "$GUEST" --output "$WORK/firmware" >/dev/null
 
+# The VM already has QEMU's isa-applesmc. With VirtualSMC loaded too, AppleSMC talks to
+# VirtualSMC, whose replies time out under emulation (SMC::waitForKeyDone); when the OSK1
+# read is hit, Dont Steal Mac OS X decrypts protected binaries with a bad key and loginwindow,
+# mds and backupd crash at launch for the whole boot (grey screen). QEMU's SMC answers in time.
+echo "==> Disabling VirtualSMC in the OpenCore disk (QEMU provides the SMC)"
+DEV=$(hdiutil attach -nomount -imagekey diskimage-class=CRawDiskImage "$WORK/firmware/EFI.img" | awk '/EFI/ {print $1}')
+MNT="$WORK/efi-mnt"; mkdir -p "$MNT"
+diskutil mount -mountPoint "$MNT" "$DEV" >/dev/null
+OCC="$MNT/EFI/OC/config.plist"
+i=0
+while BUNDLE=$(/usr/libexec/PlistBuddy -c "Print :Kernel:Add:$i:BundlePath" "$OCC" 2>/dev/null); do
+  [ "$BUNDLE" = VirtualSMC.kext ] && /usr/libexec/PlistBuddy -c "Set :Kernel:Add:$i:Enabled false" "$OCC"
+  i=$((i + 1))
+done
+/usr/libexec/PlistBuddy -c "Print :Kernel:Add" "$OCC" | grep -A2 -B1 VirtualSMC
+diskutil unmount "$MNT" >/dev/null
+hdiutil detach "${DEV%s*}" >/dev/null
+
 echo "==> Building GuestTools.iso"
 ISO="$WORK/iso"; T="$WORK/vim/$P/$GUEST/GuestTools"
 mkdir -p "$ISO/Payload"
