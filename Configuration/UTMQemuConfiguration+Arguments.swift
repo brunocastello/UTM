@@ -290,7 +290,11 @@ import Virtualization // for getting network interfaces
             f()
         } else {
             for display in displays {
-                if !shouldSkipDisplay(display) {
+                if isIntelMacAppleGfxGuest && isDisplayAppleGfx(display), let mode = appleGfxInitialDisplayMode {
+                    // VirtualIntelMac's initial native mode (JSON: display-modes is an array property)
+                    f("-device")
+                    f("{\"driver\":\"apple-gfx-pci\",\"display-modes\":[\"\(mode)\"]}")
+                } else if !shouldSkipDisplay(display) {
                     f("-device")
                     filterDisplayIfRemote(display.hardware)
                     if isRadeon(display) {
@@ -466,20 +470,10 @@ import Virtualization // for getting network interfaces
     private func passthroughOpenGLHostPanelGlobals(retina: Bool) -> [String] {
         let prefix = "vmware-svga.passthrough-opengl-"
         let hidpi = retina ? [] : ["\(prefix)hidpi=off"]
-        guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()) else {
+        guard let host = hostFullScreenPixelSize else {
             return hidpi
         }
-        let scale = mode.pixelWidth > mode.width ? 2 : 1
-        var notch = 0
-        if #available(macOS 12, *), let screen = NSScreen.screens.first {
-            notch = Int(screen.safeAreaInsets.top.rounded(.up))
-        }
-        // even pixel sizes, as VirtualIntelMac's display agent requires
-        let pixelWidth = mode.pixelWidth & ~1
-        let pixelHeight = (mode.pixelHeight * (mode.height - notch) / max(mode.height, 1)) & ~1
-        guard pixelWidth >= 640, pixelHeight >= 400, mode.width > 0 else {
-            return hidpi
-        }
+        let (pixelWidth, pixelHeight, scale) = host
         var panelWidth = pixelWidth, panelHeight = pixelHeight
         if pixelWidth > 2560 || pixelHeight > 1600 || (scale == 2 && (pixelWidth < 2048 || pixelHeight < 1536)) {
             panelWidth = 2560
@@ -492,6 +486,40 @@ import Virtualization // for getting network interfaces
         return globals
     }
     #endif
+
+    /// Pixel size of a full-screen window on the host's main display, and its backing scale.
+    /// On a Mac with a notch, full-screen windows stay below it, so the notch strip is left out.
+    /// Even sizes, as VirtualIntelMac's display agent requires.
+    private var hostFullScreenPixelSize: (Int, Int, Int)? {
+        #if os(macOS)
+        guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()), mode.width > 0, mode.height > 0 else {
+            return nil
+        }
+        let scale = mode.pixelWidth > mode.width ? 2 : 1
+        var notch = 0
+        if #available(macOS 12, *), let screen = NSScreen.screens.first {
+            notch = Int(screen.safeAreaInsets.top.rounded(.up))
+        }
+        let pixelWidth = mode.pixelWidth & ~1
+        let pixelHeight = (mode.pixelHeight * (mode.height - notch) / mode.height) & ~1
+        guard pixelWidth >= 640, pixelHeight >= 400 else {
+            return nil
+        }
+        return (pixelWidth, pixelHeight, scale)
+        #else
+        return nil
+        #endif
+    }
+
+    /// Mojave and later on apple-gfx-pci start at the host's full-screen size, as VirtualIntelMac
+    /// starts them at its window size, instead of QEMU's default 1920x1080, which doesn't fit a
+    /// full-screen window (on a notch Mac, the area below the notch) and gets letterboxed.
+    private var appleGfxInitialDisplayMode: String? {
+        guard let host = hostFullScreenPixelSize, host.0 <= 8192, host.1 <= 8192 else {
+            return nil
+        }
+        return "\(host.0)x\(host.1)@60"
+    }
 
     private func isDisplayPassthroughOpenGL(_ display: UTMQemuConfigurationDisplay) -> Bool {
         #if os(macOS)
