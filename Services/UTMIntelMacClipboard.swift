@@ -81,7 +81,7 @@ final class UTMIntelMacClipboard: NSObject {
 
     func stop() {
         if isAuthenticated {
-            port?.writeData(Data("{\"type\":\"stop\"}\n".utf8))
+            port?.write(Data("{\"type\":\"stop\"}\n".utf8))
         }
         timer?.invalidate()
         timer = nil
@@ -207,7 +207,7 @@ final class UTMIntelMacClipboard: NSObject {
             return
         }
         data.append(UInt8(ascii: "\n"))
-        port.writeData(data)
+        port.write(data)
     }
 
     private func receive(_ message: [String: Any]) {
