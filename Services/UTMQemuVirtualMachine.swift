@@ -549,6 +549,7 @@ extension UTMQemuVirtualMachine {
             await MainActor.run {
                 let sharing = UTMMacFileSharingService(name: name, uuid: uuid, port: port)
                 sharing.start()
+                sharing.adoptGuestName(from: self)
                 self.macFileSharing = sharing
             }
         }

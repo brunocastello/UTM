@@ -16,24 +16,25 @@
 
 import Foundation
 import dnssd
+import QEMUKit
 
-/// Lists a Mac OS X guest's SMB File Sharing in Finder (Network) as "<VM name>-VM".
+/// Lists a Mac OS X guest's SMB File Sharing in Finder (Network) under the guest's computer name.
 ///
 /// Port of VirtualIntelMac 2.2's VIMSMBService (MIT): QEMU forwards the guest's port 445 to a
 /// local-only host port; this publishes a local-only DNS-SD `_smb._tcp` service with that port,
 /// on a host name that resolves to 127.0.0.1. Nothing is advertised on the network.
+/// It starts as "<VM name>-VM"; once the guest agent answers, the guest's own computer name
+/// replaces it, so Finder shows one entry with the name set in the guest's Sharing preferences
+/// (Finder merges a same-named service the guest itself may announce).
 @MainActor
 final class UTMMacFileSharingService {
-    private let instance: String
+    private var instance: String
     private let hostname: String
     private let port: UInt16
     private var addressConnection: DNSServiceRef?
     private var service: DNSServiceRef?
 
-    /// smb:// address Finder can also open directly.
-    var url: URL? {
-        URL(string: "smb://\(instance)._smb._tcp.local")
-    }
+    private var nameTask: Task<Void, Never>?
 
     init(name: String, uuid: UUID, port: Int) {
         // a host-name-safe instance, like VirtualIntelMac's
@@ -54,7 +55,7 @@ final class UTMMacFileSharingService {
     }
 
     func start() {
-        stop()
+        unregister()
         let noError = DNSServiceErrorType(kDNSServiceErr_NoError)
         var loopback = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
         var record: DNSRecordRef?
@@ -81,13 +82,69 @@ final class UTMMacFileSharingService {
         }
         if status != noError {
             logger.error("Mac File Sharing: cannot publish \(instance) (DNS-SD error \(status))")
-            stop()
+            unregister()
         } else {
             logger.info("Mac File Sharing: guest SMB listed as \(instance) on local port \(port)")
         }
     }
 
+    /// Uses the guest's computer name once its agent answers (checked every 10 s for 10 minutes).
+    func adoptGuestName(from vm: UTMQemuVirtualMachine) {
+        nameTask?.cancel()
+        nameTask = Task { [weak self, weak vm] in
+            for _ in 0..<60 {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled, let vm = vm, let agent = await vm.guestAgent else {
+                    continue
+                }
+                guard let name = await Self.guestComputerName(agent) else {
+                    continue
+                }
+                guard let self = self, !Task.isCancelled else {
+                    return
+                }
+                if name != self.instance {
+                    self.instance = name
+                    self.start()
+                }
+                return
+            }
+        }
+    }
+
+    private static func guestComputerName(_ agent: QEMUGuestAgent) async -> String? {
+        do {
+            let pid = try await agent.guestExec("/usr/sbin/scutil", argv: ["--get", "ComputerName"], envp: nil, input: nil, captureOutput: true)
+            for _ in 0..<40 {
+                let status = try await agent.guestExecStatus(pid)
+                if status.hasExited {
+                    guard status.exitCode == 0, let data = status.outData,
+                          let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !text.isEmpty else {
+                        return nil
+                    }
+                    // DNS-SD instance names are at most 63 bytes of UTF-8
+                    var name = text
+                    while name.utf8.count > 63 {
+                        name.removeLast()
+                    }
+                    return name
+                }
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+        } catch {
+            logger.debug("Mac File Sharing: guest name: \(error.localizedDescription)")
+        }
+        return nil
+    }
+
     func stop() {
+        nameTask?.cancel()
+        nameTask = nil
+        unregister()
+    }
+
+    private func unregister() {
         if let service = service {
             DNSServiceRefDeallocate(service)
             self.service = nil
