@@ -117,29 +117,9 @@ The guest-side helpers are Intel builds only.
 
 ## File sharing
 
-With **Sharing → Mac File Sharing** on, what UTM does depends on the VM's network:
-
-- **Emulated** (the first Emulated network, if there are several): QEMU forwards the guest's SMB
-  port to a local port on the Mac (20000–29999, fixed for each VM), and UTM lists the guest in
-  Finder under *Network* as "<VM name>-VM".
-- **Shared, Bridged or Host Only:** the Mac reaches the guest directly, and the guest's own
-  Bonjour lists it in Finder under its computer name. UTM adds nothing.
-
-As in VirtualIntelMac, the guest is the server. Turn on **File Sharing** in the guest's
-System Preferences → Sharing, then under *Options* turn on SMB and your account.
-
-Install.command prepares the guest's SMB server the way VirtualIntelMac does:
-
-- **Snow Leopard:** VirtualIntelMac's Samba build replaces `smbd` and its authentication
-  module. It is built from Apple's last source plus later security fixes, and Apple's originals
-  are kept under `/private/var/db/VirtualIntelMac/LegacySetup`. The tool requires the setup
-  record that VirtualIntelMac's own installer writes; Install.command writes it for this
-  system volume.
-- **Mavericks:** `smbd` stops advertising one capability (AAPL Resolve ID) that a current
-  Finder mishandles (error -43). The binary is re-signed with Apple's `codesign_allocate`,
-  which VirtualIntelMac ships for guests without developer tools.
-
-The uninstaller leaves these File Sharing changes in place.
+Not included. Earlier kits prepared the guest's SMB server for a UTM "Mac File Sharing"
+option that has been removed; running this kit's Install.command (or `--uninstall`) puts
+Apple's own `smbd` back and deletes those files.
 
 ## Not included (yet)
 

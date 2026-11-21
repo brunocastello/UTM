@@ -72,6 +72,55 @@ rebuild_caches() {
   /usr/sbin/kextcache -system-caches >/dev/null 2>&1 || true
 }
 
+# Earlier UTM kits prepared the guest's SMB server for UTM's Mac File Sharing (since removed).
+# Put Apple's own smbd back and drop those files; nothing to do on a Mac that never had them.
+remove_file_sharing() {
+  # Snow Leopard: VirtualIntelMac's opengl-file-sharing replaced smbd and odsam.dylib and kept
+  # Apple's originals, by OS build and SHA-256, in its LegacySetup state folder.
+  FSSTATE=/private/var/db/VirtualIntelMac/LegacySetup
+  FSJOB=/Library/LaunchDaemons/com.virtualintelmac.snowleopard-smb-compat.plist
+  if [ -f "$FSJOB" ]; then
+    launchctl unload "$FSJOB" 2>/dev/null || true
+    rm -f "$FSJOB"
+  fi
+  if [ -f "$FSSTATE/FileSharing.plist" ]; then
+    loaded=0
+    launchctl list org.samba.smbd >/dev/null 2>&1 && loaded=1
+    [ "$loaded" = 1 ] && launchctl unload /System/Library/LaunchDaemons/smbd.plist 2>/dev/null || true
+    restored=1
+    for pair in snowleopard-smbd:/usr/sbin/smbd snowleopard-odsam.dylib:/usr/lib/samba/auth/odsam.dylib; do
+      name=${pair%%:*}; target=${pair#*:}
+      build=$($PB -c "Print :Components:$name:OriginalSourceBuild" "$FSSTATE/FileSharing.plist" 2>/dev/null) || build=
+      want=$($PB -c "Print :Components:$name:OriginalSHA256" "$FSSTATE/FileSharing.plist" 2>/dev/null) || want=
+      orig="$FSSTATE/OriginalFileSharing/$build/$name"
+      if [ -n "$build" ] && [ -n "$want" ] && [ "$(sha "$orig")" = "$want" ]; then
+        cp "$orig" "$target"; chown root:wheel "$target"; chmod 755 "$target"
+        [ "$(sha "$target")" = "$want" ] || restored=0
+      else
+        restored=0
+      fi
+    done
+    [ "$loaded" = 1 ] && launchctl load /System/Library/LaunchDaemons/smbd.plist 2>/dev/null || true
+    if [ "$restored" = 1 ]; then
+      rm -rf "$FSSTATE/FileSharing.plist" "$FSSTATE/OriginalFileSharing" "$FSSTATE/Ownership.plist"
+    else
+      echo "Apple's SMB server could not be restored; its saved copy stays in $FSSTATE."
+    fi
+  fi
+  rm -f "$AGENT_DIR/opengl-file-sharing" "$AGENT_DIR/snowleopard-smbd" "$AGENT_DIR/snowleopard-odsam.dylib" \
+        "$AGENT_DIR/SnowLeopardSMB.plist" "$AGENT_DIR/Samba-COPYING.txt"
+  # Mavericks: mavericks-smb-compat replaced smbd, keeping Apple's signed original as a hard link
+  # next to it (/usr/sbin/.vim-smbd.XXXXXX.original).
+  set -- /usr/sbin/.vim-smbd.*.original
+  if [ "$#" = 1 ] && [ -f "$1" ]; then
+    mv -f "$1" /usr/sbin/smbd
+    launchctl stop com.apple.smbd 2>/dev/null || true
+  elif [ -f "$1" ]; then
+    echo "Several saved SMB servers in /usr/sbin; Apple's smbd was not restored."
+  fi
+  rm -f "$AGENT_DIR/mavericks-smb-compat" "$AGENT_DIR/codesign_allocate"
+}
+
 if [ "${1:-}" = "--uninstall" ]; then
   [ -f "$BACKUP" ] || { echo "No saved Apple GLEngine for build $BUILD; nothing restored."; exit 1; }
   cp "$BACKUP" "$ENG/GLEngine"
@@ -84,6 +133,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   fi
   rm -f "$AGENT_DIR/opengl-guest-agent" "$AGENT_DIR/guest-clipboard"
   rm -rf /private/var/db/com.virtualintelmac.clipboard
+  remove_file_sharing
   pmset -a disablesleep 0 >/dev/null 2>&1 || true
   [ -f "$MSDOS_BACKUP" ] && cp "$MSDOS_BACKUP" "$MSDOS" && chown root:wheel "$MSDOS" && chmod 644 "$MSDOS"
   rebuild_caches
@@ -154,40 +204,8 @@ if [ -f "$KIT/Payload/opengl-guest-agent" ]; then
   launchctl load "$GUEST_AGENT_PLIST" 2>/dev/null || true
 fi
 
-# 6. File Sharing (UTM: Sharing -> Mac File Sharing), as VirtualIntelMac prepares it.
-#    Turning File Sharing (SMB) on stays your choice, in System Preferences -> Sharing.
-FS="$KIT/Payload/FileSharing"
-if [ -f "$FS/opengl-file-sharing" ]; then
-  # Snow Leopard: VirtualIntelMac's Samba build replaces smbd and its authentication module.
-  # Its tool keeps Apple's originals and checks a setup record tying it to this system volume,
-  # which VirtualIntelMac's own setup writes; write it here for this Mac.
-  FSSTATE=/private/var/db/VirtualIntelMac/LegacySetup
-  mkdir -p "$FSSTATE"; chown root:wheel /private/var/db/VirtualIntelMac "$FSSTATE"
-  chmod 700 /private/var/db/VirtualIntelMac "$FSSTATE"
-  if [ ! -f "$FSSTATE/Ownership.plist" ]; then
-    ROOTUUID=$(diskutil info / | awk -F': *' '/Volume UUID/ {print $2}')
-    $PB -c "Add :MachineIdentifier string $(uuidgen)" -c "Add :VolumeUUID string $ROOTUUID" \
-        -c "Add :Guest string $GUEST" "$FSSTATE/Ownership.plist" >/dev/null
-    chown root:wheel "$FSSTATE/Ownership.plist"; chmod 600 "$FSSTATE/Ownership.plist"
-  fi
-  STAGE=$(mktemp -d /private/var/tmp/VirtualIntelMac.XXXXXX)
-  chmod 700 "$STAGE"
-  cp "$FS/"* "$STAGE/"
-  set +e
-  "$STAGE/opengl-file-sharing" --install "$STAGE" >/dev/null
-  rc=$?
-  set -e
-  rm -rf "$STAGE"
-  [ "$rc" = 0 ] || echo "File Sharing update did not finish (status $rc); see /Library/Logs/UTM Guest Kit Install.log."
-fi
-if [ -f "$FS/mavericks-smb-compat" ]; then
-  # Mavericks: smbd stops advertising one capability that modern Finder mishandles (error -43).
-  mkdir -p "$AGENT_DIR"
-  for f in mavericks-smb-compat codesign_allocate; do
-    cp "$FS/$f" "$AGENT_DIR/$f"; chown root:wheel "$AGENT_DIR/$f"; chmod 755 "$AGENT_DIR/$f"
-  done
-  "$AGENT_DIR/mavericks-smb-compat" || echo "File Sharing fix did not apply; see /Library/Logs/UTM Guest Kit Install.log."
-fi
+# 6. Undo the File Sharing setup of earlier kits.
+remove_file_sharing
 
 # 7. Keep the OpenCore disk's EFI partition from showing as an unreadable disk.
 register_esp_probe

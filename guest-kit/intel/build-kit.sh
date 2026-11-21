@@ -99,18 +99,6 @@ PYEOF
   K="$WORK/kernel/VMsvga2.kext/Contents/MacOS/VMsvga2"
   [ -f "$K" ] && lipo "$K" -verify_arch x86_64 || { cat "$WORK/kernel.log" >&2; echo "VMsvga2 build failed" >&2; exit 1; }
   cp "$K" "$WORK/vim/$P/$GUEST/Kernel/VMsvga2.kext/Contents/MacOS/VMsvga2"
-  if [ "$GUEST" = mavericks ]; then
-    # VirtualIntelMac's Mavericks File Sharing fix: smbd stops advertising AAPL Resolve ID, which
-    # a modern macOS client invalidates (Finder error -43). Re-signed in the guest with Apple's
-    # codesign_allocate that VirtualIntelMac ships for guests without developer tools.
-    echo "==> Building mavericks-smb-compat"
-    git -C "$WORK/vim" checkout -q "$VIM_COMMIT" -- Source/tools/mavericks-smb-compat.c Source/vendor/guest-codesign
-    mkdir -p "$WORK/filesharing"
-    "$(xcrun -f clang)" -target x86_64-apple-macosx10.9 -isysroot "$WORK/MacOSX$SDK.sdk" -Os \
-      -o "$WORK/filesharing/mavericks-smb-compat" "$WORK/vim/Source/tools/mavericks-smb-compat.c"
-    cp "$WORK/vim/Source/vendor/guest-codesign/codesign_allocate" "$WORK/filesharing/"
-    cp "$WORK/vim/Source/vendor/guest-codesign/APPLE_LICENSE" "$WORK/filesharing/codesign_allocate-APPLE_LICENSE.txt"
-  fi
 fi
 
 echo "==> Building the $LABEL OpenCore disk (VirtualIntelMac build-opengl-firmware.py)"
@@ -134,18 +122,6 @@ if [ -f "$T/opengl-guest-agent" ] && [ -f "$T/guest-clipboard" ]; then
   cp "$HERE/com.utmapp.intel-guest-agent.plist" "$ISO/Payload/"
   chmod 755 "$ISO/Payload/opengl-guest-agent" "$ISO/Payload/guest-clipboard"
 fi
-# File Sharing: Snow Leopard gets VirtualIntelMac's Samba build (Apple's last source plus later
-# security fixes); Mavericks gets the smbd fix built above.
-if [ "$GUEST" = snowleopard ] && [ -f "$T/opengl-file-sharing" ]; then
-  mkdir -p "$ISO/Payload/FileSharing"
-  cp "$T/opengl-file-sharing" "$T/snowleopard-smbd" "$T/snowleopard-odsam.dylib" "$T/SnowLeopardSMB.plist" \
-     "$T/Samba-COPYING.txt" "$ISO/Payload/FileSharing/"
-fi
-if [ -d "$WORK/filesharing" ]; then
-  mkdir -p "$ISO/Payload/FileSharing"
-  cp "$WORK/filesharing/"* "$ISO/Payload/FileSharing/"
-fi
-[ -d "$ISO/Payload/FileSharing" ] && chmod 755 "$ISO/Payload/FileSharing/"* && chmod 644 "$ISO/Payload/FileSharing/"*.plist "$ISO/Payload/FileSharing/"*.txt 2>/dev/null || true
 cp "$HERE/install.command" "$ISO/Install.command"
 sed -e "s/@GUEST@/$GUEST/; s/@VERSION@/$VERSION/" -i '' "$ISO/Install.command"
 chmod 755 "$ISO/Install.command" "$ISO/Payload/GLEngine" "$ISO/Payload/libVIMPassthroughOpenGL.dylib" \
