@@ -24,11 +24,14 @@ case "$(sw_vers -productVersion)" in
   *) echo "This kit is for Mac OS X 10.4 or 10.5; this Mac runs $(sw_vers -productVersion)."; exit 1 ;;
 esac
 [ "$(uname -p)" = powerpc ] || { echo "This kit is for PowerPC Macs."; exit 1; }
+LEOPARD=0
+case "$(sw_vers -productVersion)" in 10.5|10.5.*) LEOPARD=1 ;; esac
 
 if [ "${1:-}" = "--uninstall" ]; then
   launchctl unload "$PLIST" 2>/dev/null || true
   rm -f "$PLIST" "$TOOLS/opengl-guest-agent" "$TOOLS/guest-clipboard" "$TOOLS/opengl-tiger-console"
   rm -rf /private/var/db/com.virtualintelmac.clipboard
+  [ "$LEOPARD" = 1 ] && defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
   echo "UTM guest helpers removed."
   exit 0
 fi
@@ -44,6 +47,13 @@ launchctl unload "$PLIST" 2>/dev/null || true
 cp "$KIT/Payload/com.utmapp.ppc-guest-agent.plist" "$PLIST"
 chown root:wheel "$PLIST"; chmod 644 "$PLIST"
 launchctl load "$PLIST"
+# Leopard: no Quartz GL backing stores (off by default on real Macs, opt-in per app).
+# Through the emulated Radeon a sheet's pulsing default button ("OK") renders as a
+# white box; Snow Leopard showed the same with Quartz GL and was fixed by turning it off.
+if [ "$LEOPARD" = 1 ]; then
+  defaults write /Library/Preferences/.GlobalPreferences QuartzGLEnable -bool NO
+  chmod 644 /Library/Preferences/.GlobalPreferences.plist
+fi
 echo "Installed. In UTM, turn on Sharing -> Clipboard Sharing for this VM; text is copied"
 echo "both ways once you are logged in."
 echo "Undo with: sudo sh \"$0\" --uninstall"
