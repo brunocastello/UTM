@@ -281,6 +281,7 @@ NSString *const kUTMErrorDomain = @"com.utmapp.utm";
         if ([port.name isEqualToString:@"org.qemu.guest_agent.0"]) {
 #if !defined(WITH_REMOTE)
             UTMQemuPort *qemuPort = [[UTMQemuPort alloc] initFrom:port];
+            qemuPort.isLineDelimited = YES;
             [self.connectDelegate qemuInterface:self didCreateGuestAgentPort:qemuPort];
 #endif
         }
