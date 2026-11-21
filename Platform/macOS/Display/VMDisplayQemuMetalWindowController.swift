@@ -45,6 +45,10 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
     private var globalEventMonitor: Any? = nil
     private var ctrlKeyDown: Bool = false
     private var screenChangedToken: Any?
+    private var guestDisplayPowerToken: Any?
+    /// Black cover while the guest display sleeps, so the last frame isn't left on screen
+    /// (as VirtualIntelMac's display view does); input still reaches the display below
+    private var displaySleepCover: VMDisplaySleepCover?
 
     private var displayConfig: UTMQemuConfigurationDisplay? {
         vmQemuConfig?.displays[id]
@@ -121,6 +125,11 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
             restoreDynamicResolution(for: window)
         }
 
+        guestDisplayPowerToken = NotificationCenter.default.addObserver(forName: UTMQemuVirtualMachine.guestDisplayPowerDidChange, object: qemuVM, queue: .main) { [weak self] notification in
+            let isSleeping = notification.userInfo?["isSleeping"] as? Bool ?? false
+            self?.setGuestDisplaySleeping(isSleeping)
+        }
+
         super.windowDidLoad()
     }
     
@@ -131,7 +140,26 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
             NotificationCenter.default.removeObserver(screenChangedToken)
         }
         screenChangedToken = nil
+        if let guestDisplayPowerToken = guestDisplayPowerToken {
+            NotificationCenter.default.removeObserver(guestDisplayPowerToken)
+        }
+        guestDisplayPowerToken = nil
         super.windowWillClose(notification)
+    }
+
+    private func setGuestDisplaySleeping(_ isSleeping: Bool) {
+        if isSleeping {
+            guard displaySleepCover == nil else {
+                return
+            }
+            let cover = VMDisplaySleepCover(frame: displayView.bounds)
+            cover.autoresizingMask = [.width, .height]
+            displayView.addSubview(cover, positioned: .above, relativeTo: metalView)
+            displaySleepCover = cover
+        } else {
+            displaySleepCover?.removeFromSuperview()
+            displaySleepCover = nil
+        }
     }
     
     override func enterLive() {
@@ -167,6 +195,7 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
     }
     
     override func enterSuspended(isBusy busy: Bool) {
+        setGuestDisplaySleeping(false)
         if !busy {
             metalView.isHidden = true
             screenshotView.image = vm.screenshot?.image
@@ -733,5 +762,22 @@ extension VMDisplayQemuMetalWindowController {
         let sheetWindow = NSWindow(contentViewController: content)
         sheetWindow.setContentSize(fittingSize)
         window.beginSheet(sheetWindow)
+    }
+}
+
+/// Opaque black view that lets mouse events through to the display under it
+private final class VMDisplaySleepCover: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }

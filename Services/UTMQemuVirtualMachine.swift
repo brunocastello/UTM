@@ -53,6 +53,12 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     }
     
     static let capabilities = Capabilities()
+
+    #if os(macOS)
+    /// Posted (object: the VM, userInfo "isSleeping": Bool) when a Mojave or later guest's
+    /// display sleeps or wakes, reported by VirtualIntelMac's display power observer
+    static let guestDisplayPowerDidChange = Notification.Name("UTMQemuGuestDisplayPowerDidChange")
+    #endif
     
     private(set) var pathUrl: URL {
         didSet {
@@ -153,7 +159,8 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     @MainActor private var gamepadBridge: UTMGamepadBridge?
     /// Text clipboard for Mac OS X guests with VirtualIntelMac's helpers
     @MainActor private var intelMacClipboard: UTMIntelMacClipboard?
-    /// Finder listing of a Mac OS X guest's forwarded SMB File Sharing
+    /// VirtualIntelMac's display power observer for Mojave and later
+    @MainActor private var intelMacDisplayPower: UTMIntelMacClipboard?
     #endif
 
     private let qemuVM = QEMUVirtualMachine()
@@ -544,6 +551,18 @@ extension UTMQemuVirtualMachine {
                 self.intelMacClipboard = clipboard
             }
         }
+        if isIntelMacGuest && !isIntelMacPassthroughGuest, let ioService = interface as? UTMSpiceIO {
+            await MainActor.run {
+                let displayPower = UTMIntelMacClipboard(vm: self, ioService: ioService, isVirtio: true, isDisplayPowerOnly: true) { [weak self] isSleeping in
+                    guard let self = self else {
+                        return
+                    }
+                    NotificationCenter.default.post(name: Self.guestDisplayPowerDidChange, object: self, userInfo: ["isSleeping": isSleeping])
+                }
+                displayPower.start()
+                self.intelMacDisplayPower = displayPower
+            }
+        }
         #endif
         self.isRunningAsDisposible = isRunningAsDisposible
         
@@ -890,6 +909,8 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
             gamepadBridge = nil
             intelMacClipboard?.stop()
             intelMacClipboard = nil
+            intelMacDisplayPower?.stop()
+            intelMacDisplayPower = nil
         }
         #endif
         ioService = nil

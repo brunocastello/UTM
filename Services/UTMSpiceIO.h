@@ -51,6 +51,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, nullable) CSPort *gamepadPort;
 /// Text clipboard channel to an Intel Mac guest's VirtualIntelMac helper (org.vim.clipboard)
 @property (nonatomic, readonly, nullable) CSPort *vimClipboardPort;
+/// Display power channel to a Mojave or later guest's VirtualIntelMac helper (org.vim.display)
+@property (nonatomic, readonly, nullable) CSPort *vimDisplayPort;
 @property (nonatomic, readonly) NSArray<CSDisplay *> *displays;
 @property (nonatomic, readonly) NSArray<CSPort *> *serials;
 #if defined(WITH_USB)

@@ -35,6 +35,10 @@ import CocoaSpice
 ///   JSON, protocol 2: the helper authenticates with the token (`hello`), then both sides
 ///   exchange `text` messages; `ping`/`pong` detect a helper that went away.
 /// Host text goes to the guest only while UTM is the active app, as in VirtualIntelMac.
+///
+/// With `isDisplayPowerOnly` the same helper runs as VirtualIntelMac's display power observer
+/// (Mojave and later, `org.vim.display`): it needs no logged-in user and only reports
+/// `display-power` changes, because the donated framebuffer drivers don't tell the host.
 @MainActor
 final class UTMIntelMacClipboard: NSObject {
     private static let helperPath = "/Library/Application Support/Virtual Intel Mac/GuestTools/guest-clipboard"
@@ -70,17 +74,31 @@ final class UTMIntelMacClipboard: NSObject {
     /// Mojave and later, serial port on older guests.
     private let transport: String
 
-    init(vm: UTMQemuVirtualMachine, ioService: UTMSpiceIO, isVirtio: Bool) {
+    private let isDisplayPowerOnly: Bool
+    /// Called with `true` when the guest display sleeps and `false` when it wakes or the
+    /// observer is lost (never leave the window dark on a stale state).
+    private let displayPowerChanged: ((Bool) -> Void)?
+    private var isGuestDisplaySleeping = false
+
+    init(vm: UTMQemuVirtualMachine, ioService: UTMSpiceIO, isVirtio: Bool, isDisplayPowerOnly: Bool = false, displayPowerChanged: ((Bool) -> Void)? = nil) {
         self.vm = vm
         self.ioService = ioService
         self.transport = isVirtio ? "virtio-serial" : "isa-serial"
+        self.isDisplayPowerOnly = isDisplayPowerOnly
+        self.displayPowerChanged = displayPowerChanged
     }
 
     func start() {
-        portObservation = ioService?.observe(\.vimClipboardPort, options: [.initial, .new]) { [weak self] _, _ in
-            Task { @MainActor in self?.attachPort() }
+        if isDisplayPowerOnly {
+            portObservation = ioService?.observe(\.vimDisplayPort, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor in self?.attachPort() }
+            }
+        } else {
+            portObservation = ioService?.observe(\.vimClipboardPort, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor in self?.attachPort() }
+            }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: isDisplayPowerOnly ? 1 : 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
     }
@@ -99,7 +117,7 @@ final class UTMIntelMacClipboard: NSObject {
     }
 
     private func attachPort() {
-        let newPort = ioService?.vimClipboardPort
+        let newPort = isDisplayPowerOnly ? ioService?.vimDisplayPort : ioService?.vimClipboardPort
         guard newPort !== port else {
             return
         }
@@ -111,6 +129,10 @@ final class UTMIntelMacClipboard: NSObject {
     }
 
     private func resetConnection() {
+        if isGuestDisplaySleeping {
+            isGuestDisplaySleeping = false
+            displayPowerChanged?(false)
+        }
         isAuthenticated = false
         incoming = Data()
         sent = 0
@@ -144,7 +166,7 @@ final class UTMIntelMacClipboard: NSObject {
             return
         }
         // look for a logged-in user every 5 s until the helper connects
-        if port != nil && token == nil && !isProvisioning && retryAfter.timeIntervalSinceNow < 0 && tickCount % 25 == 0 {
+        if port != nil && token == nil && !isProvisioning && retryAfter.timeIntervalSinceNow < 0 && tickCount % (isDisplayPowerOnly ? 5 : 25) == 0 {
             Task { await provision() }
         }
     }
@@ -169,17 +191,23 @@ final class UTMIntelMacClipboard: NSObject {
         isProvisioning = true
         defer { isProvisioning = false }
         do {
-            // VirtualIntelMac learns the console user the same way
-            let (status, output) = try await run(agent, "/usr/bin/stat", ["-f", "%u", "/dev/console"], timeout: 15)
-            guard status == 0, let text = output.flatMap({ String(data: $0, encoding: .utf8) }),
-                  let uid = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)), uid >= 501 else {
-                return // nobody logged in yet
+            let uid: Int
+            if isDisplayPowerOnly {
+                uid = 0 // the observer runs under a fixed system account, logged in or not
+            } else {
+                // VirtualIntelMac learns the console user the same way
+                let (status, output) = try await run(agent, "/usr/bin/stat", ["-f", "%u", "/dev/console"], timeout: 15)
+                guard status == 0, let text = output.flatMap({ String(data: $0, encoding: .utf8) }),
+                      let consoleUser = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)), consoleUser >= 501 else {
+                    return // nobody logged in yet
+                }
+                uid = consoleUser
             }
             guard port != nil, token == nil else {
                 return
             }
             let newToken = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
-            let configuration: [String: Any] = ["UID": uid, "Transport": transport, "Token": newToken, "DisplayPowerOnly": false]
+            let configuration: [String: Any] = ["UID": uid, "Transport": transport, "Token": newToken, "DisplayPowerOnly": isDisplayPowerOnly]
             let input = try JSONSerialization.data(withJSONObject: configuration)
             token = newToken
             consoleUID = uid
@@ -226,7 +254,9 @@ final class UTMIntelMacClipboard: NSObject {
             }
             isAuthenticated = true
             handshakeDeadline = nil
-            change = NSPasteboard.general.changeCount
+            if !isDisplayPowerOnly {
+                change = NSPasteboard.general.changeCount
+            }
             lastHeartbeat = ProcessInfo.processInfo.systemUptime
             send(["type": "ready", "protocol": 2])
             logger.debug("Intel Mac clipboard: connected")
@@ -239,6 +269,18 @@ final class UTMIntelMacClipboard: NSObject {
             }
             awaitingHeartbeat = 0
             lastHeartbeat = ProcessInfo.processInfo.systemUptime
+            return
+        }
+        if isDisplayPowerOnly {
+            guard type == "display-power", let sleeping = message["sleeping"] as? NSNumber,
+                  CFGetTypeID(sleeping as CFTypeRef) == CFBooleanGetTypeID() else {
+                fail()
+                return
+            }
+            if isGuestDisplaySleeping != sleeping.boolValue {
+                isGuestDisplaySleeping = sleeping.boolValue
+                displayPowerChanged?(isGuestDisplaySleeping)
+            }
             return
         }
         guard type == "text", let sequence = (message["sequence"] as? NSNumber)?.intValue,
@@ -271,7 +313,7 @@ final class UTMIntelMacClipboard: NSObject {
             heartbeatDeadline = now + 30
             send(["type": "ping", "sequence": heartbeat])
         }
-        guard isExchangeAllowed else {
+        guard !isDisplayPowerOnly, isExchangeAllowed else {
             return
         }
         let pasteboard = NSPasteboard.general
