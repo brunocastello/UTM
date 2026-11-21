@@ -83,6 +83,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     rm -f "$GUEST_AGENT_PLIST"
   fi
   rm -f "$AGENT_DIR/opengl-guest-agent" "$AGENT_DIR/guest-clipboard"
+  rm -rf /private/var/db/com.virtualintelmac.clipboard
   pmset -a disablesleep 0 >/dev/null 2>&1 || true
   [ -f "$MSDOS_BACKUP" ] && cp "$MSDOS_BACKUP" "$MSDOS" && chown root:wheel "$MSDOS" && chmod 644 "$MSDOS"
   rebuild_caches

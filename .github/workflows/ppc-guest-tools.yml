@@ -21,3 +21,32 @@ jobs:
         with:
           name: ppc-guest-tools
           path: ${{ runner.temp }}/ppc-tools
+  kit:
+    needs: tools
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: guest-kit/ppc
+      - uses: actions/download-artifact@v4
+        with:
+          name: ppc-guest-tools
+          path: ${{ runner.temp }}/tools
+      - name: GuestTools.iso
+        run: |
+          set -e
+          ISO="$RUNNER_TEMP/iso"; mkdir -p "$ISO/Payload" "$RUNNER_TEMP/kit"
+          cp "$RUNNER_TEMP/tools/opengl-guest-agent" "$RUNNER_TEMP/tools/guest-clipboard" \
+             "$RUNNER_TEMP/tools/opengl-tiger-console" guest-kit/ppc/com.utmapp.ppc-guest-agent.plist "$ISO/Payload/"
+          chmod 755 "$ISO/Payload/opengl-guest-agent" "$ISO/Payload/guest-clipboard" "$ISO/Payload/opengl-tiger-console"
+          cp guest-kit/ppc/install.command "$ISO/Install.command"; chmod 755 "$ISO/Install.command"
+          cp guest-kit/ppc/README.md "$ISO/ReadMe.md"
+          cp "$RUNNER_TEMP/tools/LICENSE-VirtualIntelMac.txt" "$ISO/"
+          hdiutil makehybrid -quiet -hfs -iso -joliet -default-volume-name "UTM Guest Kit PPC" \
+            -o "$RUNNER_TEMP/kit/GuestTools.iso" "$ISO"
+          ls -la "$RUNNER_TEMP/kit"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ppc-guest-kit
+          path: ${{ runner.temp }}/kit
+          if-no-files-found: error

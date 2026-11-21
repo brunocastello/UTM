@@ -1,5 +1,5 @@
 diff --git a/Source/tools/guest-clipboard.m b/Source/tools/guest-clipboard.m
-index 000adac..69baaed 100644
+index 000adac..cdd8c9a 100644
 --- a/Source/tools/guest-clipboard.m
 +++ b/Source/tools/guest-clipboard.m
 @@ -21,6 +21,9 @@
@@ -17,9 +17,9 @@ index 000adac..69baaed 100644
  #ifdef VIM_OPENGL_GUEST
      if(powerOnly)return nil;
 +#if UTM_PPC_GUEST
-+    // UTM PowerPC Mac guests: the clipboard's PCI serial port is in slot 0x1f.
++    // UTM PowerPC Mac guests: the clipboard's PCI serial port is in slot 0x1e.
 +    if(!VIMOpenGLGuestMachine())return nil;
-+    return @{@"Callout":@"/dev/cu.pci-serial31",@"Dialin":@"/dev/tty.pci-serial31"};
++    return @{@"Callout":@"/dev/cu.pci-serial30",@"Dialin":@"/dev/tty.pci-serial30"};
 +#else
      io_service_t guard=IOServiceGetMatchingService(MACH_PORT_NULL,IOServiceMatching("VMsvga2"));if(!guard)return nil;IOObjectRelease(guard);
      // COM1 is dedicated to clipboard on these guests; COM2 remains root-only
@@ -30,7 +30,7 @@ index 000adac..69baaed 100644
      // A short basename avoids IOSerialBSDClient's bounded device-name limit.
      // Discover the BSD suffix instead of depending on a specific port index.
 diff --git a/Source/tools/opengl-guest-agent.m b/Source/tools/opengl-guest-agent.m
-index f6c2b6c..65e2a10 100644
+index f6c2b6c..06dd060 100644
 --- a/Source/tools/opengl-guest-agent.m
 +++ b/Source/tools/opengl-guest-agent.m
 @@ -300,7 +300,16 @@ int main(int argc,char **argv) {@autoreleasepool {
@@ -39,10 +39,10 @@ index f6c2b6c..65e2a10 100644
  #endif
 -    if(!startService&&(argc!=3||strcmp(argv[1],"--device")||strcmp(argv[2],"/dev/cu.serial2")))return 64;
 +#if UTM_PPC_GUEST
-+    // UTM PowerPC Mac guests: the agent's PCI serial port is in slot 0x1e (Apple16X50Serial names it
++    // UTM PowerPC Mac guests: the agent's PCI serial port is in slot 0x1d (Apple16X50Serial names it
 +    // by the decimal PCI device number).
-+#define UTM_AGENT_CALLOUT "/dev/cu.pci-serial30"
-+#define UTM_AGENT_DIALIN "/dev/tty.pci-serial30"
++#define UTM_AGENT_CALLOUT "/dev/cu.pci-serial29"
++#define UTM_AGENT_DIALIN "/dev/tty.pci-serial29"
 +#else
 +#define UTM_AGENT_CALLOUT "/dev/cu.serial2"
 +#define UTM_AGENT_DIALIN "/dev/tty.serial2"
