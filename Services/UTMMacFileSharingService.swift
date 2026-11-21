@@ -33,6 +33,9 @@ final class UTMMacFileSharingService {
     private let port: UInt16
     private var addressConnection: DNSServiceRef?
     private var service: DNSServiceRef?
+    private var deviceInfo: DNSServiceRef?
+    /// The guest's Mac model (hw.model): Finder picks the entry's icon from it.
+    private var model: String?
 
     private var nameTask: Task<Void, Never>?
 
@@ -80,6 +83,23 @@ final class UTMMacFileSharingService {
         if status == noError, let service = service {
             status = DNSServiceSetDispatchQueue(service, .main)
         }
+        if status == noError, let model = model {
+            // Finder's icon for the entry, as a real Mac announces it; the entry works without it
+            let entry = Array(("model=" + model).utf8.prefix(255))
+            let txt = Data([UInt8(entry.count)] + entry)
+            var iconStatus = txt.withUnsafeBytes { bytes in
+                DNSServiceRegister(&deviceInfo, DNSServiceFlags(kDNSServiceFlagsNoAutoRename),
+                                   UInt32.max /* kDNSServiceInterfaceIndexLocalOnly */, instance, "_device-info._tcp.", "local.",
+                                   nil, 0, UInt16(bytes.count), bytes.baseAddress,
+                                   { _, _, _, _, _, _, _ in }, nil)
+            }
+            if iconStatus == noError, let deviceInfo = deviceInfo {
+                iconStatus = DNSServiceSetDispatchQueue(deviceInfo, .main)
+            }
+            if iconStatus != noError {
+                logger.debug("Mac File Sharing: no model for \(instance) (DNS-SD error \(iconStatus))")
+            }
+        }
         if status != noError {
             logger.error("Mac File Sharing: cannot publish \(instance) (DNS-SD error \(status))")
             unregister()
@@ -97,24 +117,24 @@ final class UTMMacFileSharingService {
                 guard !Task.isCancelled, let vm = vm, let agent = await vm.guestAgent else {
                     continue
                 }
-                guard let name = await Self.guestComputerName(agent) else {
+                guard let name = await Self.guestOutput(agent, "/usr/sbin/scutil", ["--get", "ComputerName"]) else {
                     continue
                 }
+                let model = await Self.guestOutput(agent, "/usr/sbin/sysctl", ["-n", "hw.model"])
                 guard let self = self, !Task.isCancelled else {
                     return
                 }
-                if name != self.instance {
-                    self.instance = name
-                    self.start()
-                }
+                self.instance = name
+                self.model = model
+                self.start()
                 return
             }
         }
     }
 
-    private static func guestComputerName(_ agent: QEMUGuestAgent) async -> String? {
+    private static func guestOutput(_ agent: QEMUGuestAgent, _ path: String, _ arguments: [String]) async -> String? {
         do {
-            let pid = try await agent.guestExec("/usr/sbin/scutil", argv: ["--get", "ComputerName"], envp: nil, input: nil, captureOutput: true)
+            let pid = try await agent.guestExec(path, argv: arguments, envp: nil, input: nil, captureOutput: true)
             for _ in 0..<40 {
                 let status = try await agent.guestExecStatus(pid)
                 if status.hasExited {
@@ -133,7 +153,7 @@ final class UTMMacFileSharingService {
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
         } catch {
-            logger.debug("Mac File Sharing: guest name: \(error.localizedDescription)")
+            logger.debug("Mac File Sharing: guest \(path): \(error.localizedDescription)")
         }
         return nil
     }
@@ -145,6 +165,10 @@ final class UTMMacFileSharingService {
     }
 
     private func unregister() {
+        if let deviceInfo = deviceInfo {
+            DNSServiceRefDeallocate(deviceInfo)
+            self.deviceInfo = nil
+        }
         if let service = service {
             DNSServiceRefDeallocate(service)
             self.service = nil
