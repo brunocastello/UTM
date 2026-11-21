@@ -202,6 +202,10 @@ final class UTMIntelMacClipboard: NSObject {
         isProvisioning = true
         defer { isProvisioning = false }
         do {
+            // Re-align the agent channel first, as VirtualIntelMac does: after a guest restart
+            // (PowerPC resets in the same QEMU process) or an agent reload, a reply to a request
+            // that timed out can still arrive and be taken for the answer to the next one.
+            try await agent.synchronize()
             let uid: Int
             if isDisplayPowerOnly {
                 uid = 0 // the observer runs under a fixed system account, logged in or not
