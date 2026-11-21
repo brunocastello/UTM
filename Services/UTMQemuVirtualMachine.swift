@@ -154,7 +154,6 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     /// Text clipboard for Mac OS X guests with VirtualIntelMac's helpers
     @MainActor private var intelMacClipboard: UTMIntelMacClipboard?
     /// Finder listing of a Mac OS X guest's forwarded SMB File Sharing
-    @MainActor private var macFileSharing: UTMMacFileSharingService?
     #endif
 
     private let qemuVM = QEMUVirtualMachine()
@@ -542,17 +541,6 @@ extension UTMQemuVirtualMachine {
                 self.intelMacClipboard = clipboard
             }
         }
-        if await config.isMacFileSharingUsed {
-            let name = await config.information.name
-            let uuid = await config.information.uuid
-            let port = await config.macFileSharingPort
-            await MainActor.run {
-                let sharing = UTMMacFileSharingService(name: name, uuid: uuid, port: port)
-                sharing.start()
-                sharing.adoptGuestName(from: self)
-                self.macFileSharing = sharing
-            }
-        }
         #endif
         self.isRunningAsDisposible = isRunningAsDisposible
         
@@ -899,8 +887,6 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
             gamepadBridge = nil
             intelMacClipboard?.stop()
             intelMacClipboard = nil
-            macFileSharing?.stop()
-            macFileSharing = nil
         }
         #endif
         ioService = nil

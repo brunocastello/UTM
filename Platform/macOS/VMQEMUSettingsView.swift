@@ -72,9 +72,7 @@ struct VMQEMUSettingsView: View {
             Label("Input", systemImage: "keyboard")
         }
         NavigationLink {
-            VMConfigSharingView(config: $config.sharing, isIntelMacGuest: (config.system.architecture == .x86_64 &&
-                                config.displays.contains { ($0.hardware.rawValue == "vmware-svga" && $0.isPassthroughOpenGL) || $0.hardware.rawValue == "apple-gfx-pci" }) ||
-                                ([.ppc, .ppc64].contains(config.system.architecture) && config.displays.contains { $0.hardware.rawValue == "ati-radeon-9700" }))
+            VMConfigSharingView(config: $config.sharing)
                 .scrollable()
                 .settingsToolbar()
         } label: {

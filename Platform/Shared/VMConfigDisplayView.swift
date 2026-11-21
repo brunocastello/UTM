@@ -45,11 +45,13 @@ struct VMConfigDisplayView: View {
                     
                     #if os(macOS)
                     if config.hardware.rawValue == "vmware-svga" {
-                        Toggle("OpenGL Passthrough", isOn: $config.isPassthroughOpenGL)
-                        if config.isPassthroughOpenGL {
-                            Text("Needs the Intel guest kit drivers.")
-                                .font(.footnote)
-                        }
+                        VStack(alignment: .leading) {
+                            Toggle("OpenGL Passthrough", isOn: $config.isPassthroughOpenGL)
+                            if config.isPassthroughOpenGL {
+                                Text("Needs the Intel guest kit drivers.")
+                                    .font(.footnote)
+                            }
+                        }.padding(.bottom, 12)
                     }
                     #endif
                 }
@@ -70,11 +72,6 @@ struct VMConfigDisplayView: View {
                     Toggle(isOn: $config.isNativeResolution, label: {
                         Text("Retina Mode")
                     })
-                    #if os(macOS)
-                    Toggle(isOn: $config.isIntegerScaling, label: {
-                        Text("Integer Scaling")
-                    }).help("Enlarge the display only by whole multiples, so every pixel has the same size.")
-                    #endif
                 }
             }
         }.disableAutocorrection(true)

@@ -18,8 +18,6 @@ import SwiftUI
 
 struct VMConfigSharingView: View {
     @Binding var config: UTMQemuConfigurationSharing
-    /// Mac OS X Intel guest (VirtualIntelMac guest kit): offers Mac File Sharing.
-    var isIntelMacGuest: Bool = false
     @State private var isImporterPresented: Bool = false
     @EnvironmentObject private var data: UTMData
     
@@ -31,16 +29,6 @@ struct VMConfigSharingView: View {
                         Text("Enable Clipboard Sharing")
                     })
                 }
-                
-                #if os(macOS)
-                if isIntelMacGuest {
-                    DetailedSection("Mac File Sharing", description: "Turn on File Sharing (SMB) in the guest's Sharing preferences. With the Emulated network, UTM lists it in Finder under Network as the VM's name followed by -VM; with Shared, Bridged or Host Only networking the guest appears there by its own name. Needs the Intel guest kit.") {
-                        Toggle(isOn: $config.hasMacFileSharing, label: {
-                            Text("Enable Mac File Sharing")
-                        })
-                    }
-                }
-                #endif
                 
                 DetailedSection("Shared Directory", description: "WebDAV requires installing SPICE daemon. VirtFS requires installing device drivers.") {
                     VMConfigConstantPicker("Directory Share Mode", selection: $config.directoryShareMode)

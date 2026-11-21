@@ -202,7 +202,7 @@ extension UTMScriptingConfigImpl {
     
     private func qemuScaler(from filter: QEMUScaler) -> UTMScriptingQemuScaler {
         switch filter {
-        case .linear, .sharpBilinear: return .linear
+        case .linear: return .linear
         case .nearest: return .nearest
         }
     }

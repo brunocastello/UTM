@@ -365,28 +365,6 @@ import Virtualization // for getting network interfaces
         #endif
     }
 
-    /// The network that carries the guest's SMB File Sharing to the host: the first Emulated one.
-    /// With Shared, Bridged or Host Only networking the host reaches the guest directly and the
-    /// guest's own Bonjour lists it in Finder, so UTM forwards nothing.
-    private var macFileSharingNetworkIndex: Int? {
-        guard (isIntelMacGuest || isMacOSXPPCGuest) && sharing.hasMacFileSharing else {
-            return nil
-        }
-        return networks.firstIndex { $0.mode == .emulated }
-    }
-
-    /// The guest's SMB File Sharing is forwarded to a local host port and listed by UTM.
-    var isMacFileSharingUsed: Bool {
-        macFileSharingNetworkIndex != nil
-    }
-
-    /// Local host port for the guest's SMB server: fixed per VM, so Finder's saved
-    /// connections keep working, in 20000–29999.
-    var macFileSharingPort: Int {
-        let bytes = information.uuid.uuid
-        return 20000 + (Int(bytes.0) << 8 | Int(bytes.1)) % 10000
-    }
-
     /// Mac OS X Intel guest on VMware SVGA with OpenGL passthrough (Snow Leopard … High Sierra).
     var isIntelMacPassthroughGuest: Bool {
         isIntelMacGuest && !isIntelMacAppleGfxGuest
@@ -1544,10 +1522,6 @@ import Virtualization // for getting network interfaces
                 }
                 for forward in networks[i].portForward {
                     "hostfwd=\(forward.protocol.rawValue.lowercased()):\(forward.hostAddress ?? ""):\(forward.hostPort)-\(forward.guestAddress ?? ""):\(forward.guestPort)"
-                }
-                if i == macFileSharingNetworkIndex {
-                    // as VirtualIntelMac: the guest's SMB server on a local-only host port
-                    "hostfwd=tcp:127.0.0.1:\(macFileSharingPort)-:445"
                 }
             }
             f()
