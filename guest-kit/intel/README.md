@@ -111,7 +111,8 @@ Install.command also installs two of VirtualIntelMac's guest helpers:
 
 With **Sharing → Clipboard Sharing** on, UTM waits until a user is logged in, then asks the
 agent to start the clipboard helper in that user's session. Plain text is copied both ways
-(up to 1 MB) while UTM is the active app. Snow Leopard … High Sierra; not Mojave.
+(up to 1 MB) while UTM is the active app. Snow Leopard … High Sierra here; Mojave gets
+VirtualIntelMac's modern helper from its own kit (see below).
 
 The guest-side helpers are Intel builds only.
 
@@ -162,7 +163,10 @@ The disc also carries a fixed build of VirtualIntelMac's Mojave OpenGL engine (`
 built by the kit from VirtualIntelMac's sources with `vim-packed-vertex.patch`): without it,
 GL 3.3/4.1 games that use packed vertex formats (SuperTuxKart 1.5) lose their 3D models.
 Install.command installs it; on a guest that is already installed, running it again only
-updates this engine. The kit build needs Xcode or its Command Line Tools, and downloads the
+updates this engine and the clipboard helper. The disc carries VirtualIntelMac's modern text
+clipboard helper (`Clipboard/guest-clipboard`); with **Sharing → Clipboard Sharing** on, UTM
+adds a VirtIO console port `org.vim.clipboard` and starts the helper through the guest agent
+once a user is logged in. The kit build needs Xcode or its Command Line Tools, and downloads the
 macOS 10.9 SDK headers (checksum-pinned) for the guest engine's period ABI.
 
 With apple-gfx-pci, UTM also adds VirtualIntelMac's OpenGL command transport

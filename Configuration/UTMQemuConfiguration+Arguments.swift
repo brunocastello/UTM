@@ -1591,6 +1591,14 @@ import Virtualization // for getting network interfaces
             f("-device")
             f("isa-serial,chardev=vimclipboard,index=0")
         }
+        if isIntelMacAppleGfxGuest && sharing.hasClipboardSharing && !isRemoteSpice &&
+            system.architecture.hasAgentSupport && system.target.hasAgentSupport {
+            // Mojave and later: the helper finds its VirtIO console port by name, as in VirtualIntelMac
+            f("-chardev")
+            f("spiceport,name=org.vim.clipboard,id=vimclipboard")
+            f("-device")
+            f("virtserialport,chardev=vimclipboard,name=org.vim.clipboard")
+        }
         if isSpiceAgentUsed {
             f("-device")
             f("virtserialport,chardev=vdagent,name=com.redhat.spice.0")

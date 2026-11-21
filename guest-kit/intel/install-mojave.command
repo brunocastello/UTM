@@ -8,6 +8,7 @@
 #   Install.command --verify   after the restart: confirm the installation
 # Run again on an installed guest, it only updates the GL engine fix (GLFix/:
 # VirtualIntelMac's Mojave GL pair with UTM's packed-vertex fix).
+# It also installs VirtualIntelMac's clipboard helper (Clipboard/) when missing or changed.
 set -euo pipefail
 if [ "$(id -u)" != 0 ]; then
   echo "Administrator password needed."
@@ -40,6 +41,19 @@ gl_fix() {
   echo "OpenGL engine fix installed (originals in $BACKUP). Quit and reopen OpenGL apps."
 }
 
+# Put the clipboard helper where UTM's guest agent runs it (UTM: Sharing -> Clipboard Sharing).
+CLIP="/Library/Application Support/Virtual Intel Mac/GuestTools"
+clipboard_helper() {
+  [ -f "$DISC/Clipboard/guest-clipboard" ] || return 0
+  cmp -s "$DISC/Clipboard/guest-clipboard" "$CLIP/guest-clipboard" && return 0
+  step "Installing the clipboard helper"
+  mkdir -p "$CLIP"
+  cp "$DISC/Clipboard/guest-clipboard" "$CLIP/guest-clipboard.new"
+  chown root:wheel "$CLIP/guest-clipboard.new"; chmod 755 "$CLIP/guest-clipboard.new"
+  mv -f "$CLIP/guest-clipboard.new" "$CLIP/guest-clipboard"
+  echo "Clipboard helper installed; it starts once you are logged in."
+}
+
 # A pending installation from the previous run: this run is the after-restart check.
 if [ "${1:-}" = "--verify" ] || { [ -s "$LAST" ] && [ -f "$(cat "$LAST")" ] && \
      [ "$("$(dirname "$(cat "$LAST")")/guest-install" --status "$(cat "$LAST")" | json Phase)" = "awaiting-reboot" ]; }; then
@@ -47,6 +61,7 @@ if [ "${1:-}" = "--verify" ] || { [ -s "$LAST" ] && [ -f "$(cat "$LAST")" ] && \
   step "Verifying the installation after restart"
   "$(dirname "$J")/guest-install" --verify-after-reboot "$J"; rm -f "$LAST"
   gl_fix
+  clipboard_helper
   echo; echo "Done. The Mojave graphics drivers are installed and verified."
   exit 0
 fi
@@ -54,6 +69,7 @@ fi
 # Already installed (and verified): only bring the GL engine fix up to date.
 if [ -f "$BUNDLE/GLEnginePassthrough" ]; then
   gl_fix
+  clipboard_helper
   exit 0
 fi
 
@@ -90,5 +106,6 @@ echo "$R"
 if [ "$(echo "$R" | json Phase)" != "awaiting-reboot" ]; then
   echo "Installation did not complete (see above)." >&2; exit 1
 fi
+clipboard_helper
 echo
 echo "Installed. Shut down, switch the VM display to apple-gfx-pci in UTM, start it, then open Install.command again."

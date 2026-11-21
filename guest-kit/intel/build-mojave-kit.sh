@@ -124,6 +124,10 @@ ditto "$M" "$DISC"; hdiutil detach -quiet "$M"
 cp "$HERE/install-mojave.command" "$DISC/Install.command"; chmod 755 "$DISC/Install.command"
 cp "$WORK/vim/LICENSE" "$DISC/LICENSE-VirtualIntelMac.txt"
 mkdir -p "$DISC/GLFix"; cp "$WORK/glfix/"* "$DISC/GLFix/"
+# VirtualIntelMac's text clipboard helper for modern guests (VirtIO console port
+# org.vim.clipboard); UTM provisions it through the guest agent, as VirtualIntelMac does.
+mkdir -p "$DISC/Clipboard"; cp "$SRC/prebuilt/tools/guest-clipboard" "$DISC/Clipboard/"
+chmod 755 "$DISC/Clipboard/guest-clipboard"
 hdiutil makehybrid -quiet -hfs -iso -joliet -hfs-volume-name 'Virtual Intel Mac Support' \
   -o "$WORK/MojaveSupport.iso" "$DISC"
 

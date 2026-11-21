@@ -23,8 +23,9 @@ import CocoaSpice
 #endif
 
 /// Text clipboard sharing with a Mac OS X guest through VirtualIntelMac 2.2's guest helpers:
-/// Intel (Snow Leopard … High Sierra, helpers on the COM ports) and PowerPC Tiger/Leopard
-/// (UTM's PowerPC build of the helpers, on PCI serial ports), installed by the guest kits.
+/// Intel (Snow Leopard … High Sierra, helpers on the COM ports; Mojave and later on a VirtIO
+/// console port) and PowerPC Tiger/Leopard (UTM's PowerPC build of the helpers, on PCI serial
+/// ports), installed by the guest kits.
 ///
 /// Port of VirtualIntelMac's VIMClipboardBridge and the provisioning in VIMSession (MIT):
 /// - The guest's root agent (`opengl-guest-agent`, QGA protocol on COM2) runs
@@ -65,9 +66,14 @@ final class UTMIntelMacClipboard: NSObject {
     private var pendingNextRead: TimeInterval = 0
     private var pendingDelay: TimeInterval = 0
 
-    init(vm: UTMQemuVirtualMachine, ioService: UTMSpiceIO) {
+    /// Transport the guest helper expects (VirtualIntelMac's `Transport`): VirtIO console on
+    /// Mojave and later, serial port on older guests.
+    private let transport: String
+
+    init(vm: UTMQemuVirtualMachine, ioService: UTMSpiceIO, isVirtio: Bool) {
         self.vm = vm
         self.ioService = ioService
+        self.transport = isVirtio ? "virtio-serial" : "isa-serial"
     }
 
     func start() {
@@ -173,7 +179,7 @@ final class UTMIntelMacClipboard: NSObject {
                 return
             }
             let newToken = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
-            let configuration: [String: Any] = ["UID": uid, "Transport": "isa-serial", "Token": newToken, "DisplayPowerOnly": false]
+            let configuration: [String: Any] = ["UID": uid, "Transport": transport, "Token": newToken, "DisplayPowerOnly": false]
             let input = try JSONSerialization.data(withJSONObject: configuration)
             token = newToken
             consoleUID = uid
