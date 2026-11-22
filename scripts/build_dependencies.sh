@@ -1014,6 +1014,12 @@ build_vim_passthrough_opengl () {
             patch -d "$DIR" -p1 < "$QEMU_DIR/hw/display/vim-packed-vertex.patch"
         fi
     fi
+    if [ -f "$QEMU_DIR/hw/display/vim-arb-legacy-mul.patch" ]; then
+        # ARB fragment programs multiply with the period rule 0 * x = 0 (Quartz GL, Core Image)
+        if ! patch -d "$DIR" -R --dry-run -s -f -p1 < "$QEMU_DIR/hw/display/vim-arb-legacy-mul.patch" >/dev/null 2>&1; then
+            patch -d "$DIR" -p1 < "$QEMU_DIR/hw/display/vim-arb-legacy-mul.patch"
+        fi
+    fi
     # newer Xcode warnings must not fail the pinned sources
     sed -i '' "s/'-Werror',//" "$DIR/Source/scripts/build-opengl-host.py"
     python3 "$DIR/Source/scripts/build-opengl-host.py" --output "$DIR/out"
