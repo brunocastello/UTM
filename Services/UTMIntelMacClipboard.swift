@@ -126,12 +126,15 @@ final class UTMIntelMacClipboard: NSObject {
         guard newPort !== port else {
             return
         }
-        // the helper we provisioned (or are provisioning) opened its VirtIO port: keep its token
-        let isProvisionedHelper = port == nil && newPort != nil && token != nil
+        // A VirtIO port opens and closes with the guest's use of it: provisioning itself opens and
+        // closes it once (to set its owner) before the helper opens it for good. Until the helper
+        // says hello, keep the token it was provisioned with.
+        let isAwaitingHello = transport == "virtio-serial" && !isAuthenticated && token != nil
+        let deadline = handshakeDeadline
         port?.delegate = nil
         resetConnection()
-        if isProvisionedHelper {
-            handshakeDeadline = Date(timeIntervalSinceNow: 30)
+        if isAwaitingHello {
+            handshakeDeadline = newPort != nil ? Date(timeIntervalSinceNow: 30) : deadline
         } else {
             token = nil
         }
