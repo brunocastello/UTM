@@ -120,16 +120,6 @@ while BUNDLE=$(/usr/libexec/PlistBuddy -c "Print :Kernel:Add:$i:BundlePath" "$OC
   i=$((i + 1))
 done
 /usr/libexec/PlistBuddy -c "Print :Kernel:Add" "$OCC" | grep -A2 -B1 VirtualSMC
-# Snow Leopard: AccelCaps without bit 1 (Quartz GL backing stores). VirtualIntelMac sets 15 on
-# every period guest because Mountain Lion's menu filters need bit 1; with it 10.6 draws app
-# windows through GL and the pulsing default button ("Done" in Sharing -> File Sharing ->
-# Options) gets a washed-out fill and unsmoothed text. Real Macs leave Quartz GL off on 10.6,
-# and a QuartzGLEnable=NO preference in the global domain did not reach System Preferences.
-if [ "$GUEST" = snowleopard ]; then
-  ACC="$MNT/EFI/OC/Kexts/VMsvga2Accel.kext/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c "Set :IOKitPersonalities:VMsvga2Accel:AccelCaps 13" "$ACC"
-  echo "AccelCaps: $(/usr/libexec/PlistBuddy -c "Print :IOKitPersonalities:VMsvga2Accel:AccelCaps" "$ACC")"
-fi
 diskutil unmount "$MNT" >/dev/null
 hdiutil detach "${DEV%s*}" >/dev/null
 
