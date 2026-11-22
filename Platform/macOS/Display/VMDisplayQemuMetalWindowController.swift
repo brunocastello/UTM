@@ -395,7 +395,12 @@ extension VMDisplayQemuMetalWindowController {
         guard let vmDisplay = self.vmDisplay else { return frameSize }
         let currentScreenScale = window.screen?.backingScaleFactor ?? 1.0
         let nativeScale = displayConfig!.isNativeResolution ? currentScreenScale : 1.0
-        let targetSize = window.contentRect(forFrameRect: CGRect(origin: .zero, size: frameSize)).size
+        var targetSize = window.contentRect(forFrameRect: CGRect(origin: .zero, size: frameSize)).size
+        if #available(macOS 12, *), isFullScreen, let screen = window.screen, screen.safeAreaInsets.top > 0 {
+            // on a Mac with a notch the full-screen frame includes the notch strip, but the
+            // display is shown below it: ask the guest for the visible area only
+            targetSize = CGSize(width: screen.frame.width, height: screen.frame.height - screen.safeAreaInsets.top)
+        }
         let targetSizeScaled = displayConfig!.isNativeResolution ? targetSize.applying(CGAffineTransform(scaleX: nativeScale, y: nativeScale)) : targetSize
         logger.debug("Requesting resolution: (\(targetSizeScaled.width), \(targetSizeScaled.height))")
         let bounds = CGRect(origin: .zero, size: targetSizeScaled)
@@ -450,6 +455,10 @@ extension VMDisplayQemuMetalWindowController {
     
     func windowDidEnterFullScreen(_ notification: Notification) {
         isFullScreen = true
+        if isDisplaySizeDynamic, let window = window {
+            // the resize during the transition ran before isFullScreen was set
+            _ = updateGuestResolution(for: window, frameSize: window.frame.size)
+        }
         if isFullScreenAutoCapture {
             captureMouse()
         }

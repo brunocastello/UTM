@@ -158,7 +158,8 @@ final class UTMIntelMacClipboard: NSObject {
     }
 
     /// Lost helper or protocol error: provision again after a pause, as VirtualIntelMac does.
-    private func fail() {
+    private func fail(line: Int = #line) {
+        logger.warning("Intel Mac clipboard\(isDisplayPowerOnly ? " (display power)" : ""): connection reset (\(transport), UTMIntelMacClipboard.swift:\(line))")
         resetConnection()
         token = nil
         retryAfter = Date(timeIntervalSinceNow: 60)
@@ -175,7 +176,7 @@ final class UTMIntelMacClipboard: NSObject {
             return
         }
         if let deadline = handshakeDeadline, deadline.timeIntervalSinceNow < 0 {
-            logger.debug("Intel Mac clipboard: guest helper did not connect")
+            logger.warning("Intel Mac clipboard: guest helper did not connect")
             fail()
             return
         }
@@ -241,11 +242,11 @@ final class UTMIntelMacClipboard: NSObject {
             if result == 0 {
                 handshakeDeadline = Date(timeIntervalSinceNow: 30)
             } else {
-                logger.debug("Intel Mac clipboard: guest helper setup exited with \(result)")
+                logger.warning("Intel Mac clipboard: guest helper setup exited with \(result)")
                 fail()
             }
         } catch {
-            logger.debug("Intel Mac clipboard: guest agent: \(error.localizedDescription)")
+            logger.warning("Intel Mac clipboard: guest agent: \(error.localizedDescription)")
             if token != nil && !isAuthenticated {
                 fail()
             }
@@ -310,7 +311,7 @@ final class UTMIntelMacClipboard: NSObject {
             }
             lastHeartbeat = ProcessInfo.processInfo.systemUptime
             send(["type": "ready", "protocol": 2])
-            logger.debug("Intel Mac clipboard: connected")
+            logger.info("Intel Mac clipboard\(isDisplayPowerOnly ? " (display power)" : ""): connected")
             return
         }
         if type == "pong" {
@@ -412,7 +413,7 @@ extension UTMIntelMacClipboard: CSPortDelegate {
     nonisolated func port(_ port: CSPort, didError error: String) {
         Task { @MainActor in
             if port === self.port {
-                logger.debug("Intel Mac clipboard: port error \(error)")
+                logger.warning("Intel Mac clipboard: port error \(error)")
                 self.fail()
             }
         }
