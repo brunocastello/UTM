@@ -445,6 +445,10 @@ import Virtualization // for getting network interfaces
             "PVG_PRESERVE_IOSURFACE": "1", "PVG_SHADOW_COALESCE": "1",
             "PVG_SHADOW_MAX_CHUNK": "1048576", "PVG_SHADOW_TEXTURE_PAGING": "1",
         ]
+        // the helper starts at this size (full screen below a notch), not the whole panel
+        if let mode = appleGfxInitialDisplayMode, let size = mode.split(separator: "@").first {
+            environment["PVG_OOP_INITIAL_SIZE"] = String(size)
+        }
         // Mojave's Metal shaders need its own GPUCompiler to repair them (AIR); the kit installs it for Mojave
         let llvm = donor.appendingPathComponent("System/Library/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib")
         if FileManager.default.fileExists(atPath: llvm.path) {

@@ -406,7 +406,9 @@ final class UTMIntelMacClipboard: NSObject {
 extension UTMIntelMacClipboard: CSPortDelegate {
     nonisolated func portDidDisconect(_ port: CSPort) {
         Task { @MainActor in
-            if port === self.port {
+            // A VirtIO port closes whenever the guest closes the device, e.g. while provisioning
+            // sets its owner; attachPort handles that close and the reopen.
+            if port === self.port && self.transport != "virtio-serial" {
                 self.fail()
             }
         }
