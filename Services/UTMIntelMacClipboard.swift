@@ -126,6 +126,7 @@ final class UTMIntelMacClipboard: NSObject {
         guard newPort !== port else {
             return
         }
+        NSLog("Intel Mac clipboard%@: port %@, token %@, authenticated %ld", isDisplayPowerOnly ? " (display power)" : "", newPort == nil ? "closed" : "opened", token == nil ? "none" : "pending", isAuthenticated ? 1 : 0)
         // A VirtIO port opens and closes with the guest's use of it: provisioning itself opens and
         // closes it once (to set its owner) before the helper opens it for good. Until the helper
         // says hello, keep the token it was provisioned with.
@@ -159,7 +160,7 @@ final class UTMIntelMacClipboard: NSObject {
 
     /// Lost helper or protocol error: provision again after a pause, as VirtualIntelMac does.
     private func fail(line: Int = #line) {
-        logger.warning("Intel Mac clipboard\(isDisplayPowerOnly ? " (display power)" : ""): connection reset (\(transport), UTMIntelMacClipboard.swift:\(line))")
+        NSLog("Intel Mac clipboard%@: connection reset (%@, UTMIntelMacClipboard.swift:%ld)", isDisplayPowerOnly ? " (display power)" : "", transport, line)
         resetConnection()
         token = nil
         retryAfter = Date(timeIntervalSinceNow: 60)
@@ -176,7 +177,7 @@ final class UTMIntelMacClipboard: NSObject {
             return
         }
         if let deadline = handshakeDeadline, deadline.timeIntervalSinceNow < 0 {
-            logger.warning("Intel Mac clipboard: guest helper did not connect")
+            NSLog("Intel Mac clipboard: guest helper did not connect")
             fail()
             return
         }
@@ -242,11 +243,11 @@ final class UTMIntelMacClipboard: NSObject {
             if result == 0 {
                 handshakeDeadline = Date(timeIntervalSinceNow: 30)
             } else {
-                logger.warning("Intel Mac clipboard: guest helper setup exited with \(result)")
+                NSLog("Intel Mac clipboard: guest helper setup exited with %ld", result)
                 fail()
             }
         } catch {
-            logger.warning("Intel Mac clipboard: guest agent: \(error.localizedDescription)")
+            NSLog("Intel Mac clipboard: guest agent: %@", error.localizedDescription)
             if token != nil && !isAuthenticated {
                 fail()
             }
@@ -299,6 +300,7 @@ final class UTMIntelMacClipboard: NSObject {
     private func receive(_ message: [String: Any]) {
         let type = message["type"] as? String
         if !isAuthenticated {
+            NSLog("Intel Mac clipboard%@: hello type=%@ protocol=%@ token %@", isDisplayPowerOnly ? " (display power)" : "", type ?? "nil", String(describing: message["protocol"]), token == nil ? "none" : ((message["token"] as? String) == token ? "matches" : "differs"))
             guard type == "hello", (message["protocol"] as? NSNumber)?.intValue == 2,
                   let token = token, message["token"] as? String == token else {
                 fail()
@@ -311,7 +313,7 @@ final class UTMIntelMacClipboard: NSObject {
             }
             lastHeartbeat = ProcessInfo.processInfo.systemUptime
             send(["type": "ready", "protocol": 2])
-            logger.info("Intel Mac clipboard\(isDisplayPowerOnly ? " (display power)" : ""): connected")
+            NSLog("Intel Mac clipboard%@: connected", isDisplayPowerOnly ? " (display power)" : "")
             return
         }
         if type == "pong" {
@@ -413,7 +415,7 @@ extension UTMIntelMacClipboard: CSPortDelegate {
     nonisolated func port(_ port: CSPort, didError error: String) {
         Task { @MainActor in
             if port === self.port {
-                logger.warning("Intel Mac clipboard: port error \(error)")
+                NSLog("Intel Mac clipboard: port error %@", error)
                 self.fail()
             }
         }

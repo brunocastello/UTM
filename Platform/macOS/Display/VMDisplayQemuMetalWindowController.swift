@@ -401,6 +401,7 @@ extension VMDisplayQemuMetalWindowController {
             // display is shown below it: ask the guest for the visible area only
             targetSize = CGSize(width: screen.frame.width, height: screen.frame.height - screen.safeAreaInsets.top)
         }
+        NSLog("Display: requesting %@ (full screen %ld, frame %@)", NSStringFromSize(targetSize), isFullScreen ? 1 : 0, NSStringFromSize(frameSize))
         let targetSizeScaled = displayConfig!.isNativeResolution ? targetSize.applying(CGAffineTransform(scaleX: nativeScale, y: nativeScale)) : targetSize
         logger.debug("Requesting resolution: (\(targetSizeScaled.width), \(targetSizeScaled.height))")
         let bounds = CGRect(origin: .zero, size: targetSizeScaled)
