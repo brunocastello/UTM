@@ -19,6 +19,7 @@ set -e
 KIT=$(cd "$(dirname "$0")" && pwd)
 TOOLS="/Library/Application Support/Virtual Intel Mac/GuestTools"
 PLIST=/Library/LaunchDaemons/com.utmapp.ppc-guest-agent.plist
+QGL_LIST="$TOOLS/quartzgl-off-apps.txt"
 case "$(sw_vers -productVersion)" in
   10.4|10.4.*|10.5|10.5.*) ;;
   *) echo "This kit is for Mac OS X 10.4 or 10.5; this Mac runs $(sw_vers -productVersion)."; exit 1 ;;
@@ -31,7 +32,11 @@ if [ "${1:-}" = "--uninstall" ]; then
   launchctl unload "$PLIST" 2>/dev/null || true
   rm -f "$PLIST" "$TOOLS/opengl-guest-agent" "$TOOLS/guest-clipboard" "$TOOLS/opengl-tiger-console"
   rm -rf /private/var/db/com.virtualintelmac.clipboard
-  [ "$LEOPARD" = 1 ] && defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
+  if [ "$LEOPARD" = 1 ]; then
+    defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
+    for id in $(cat "$QGL_LIST" 2>/dev/null); do defaults delete "/Library/Preferences/$id" QuartzGLEnable 2>/dev/null || true; done
+    rm -f "$QGL_LIST"
+  fi
   echo "UTM guest helpers removed."
   exit 0
 fi
@@ -47,12 +52,21 @@ launchctl unload "$PLIST" 2>/dev/null || true
 cp "$KIT/Payload/com.utmapp.ppc-guest-agent.plist" "$PLIST"
 chown root:wheel "$PLIST"; chmod 644 "$PLIST"
 launchctl load "$PLIST"
-# Leopard: no Quartz GL backing stores (off by default on real Macs, opt-in per app).
-# Through the emulated Radeon a sheet's pulsing default button ("OK") renders as a
-# white box; Snow Leopard showed the same with Quartz GL and was fixed by turning it off.
+# Leopard: no Quartz GL for the apps that ask for it in their Info.plist (System
+# Preferences, QuickTime Player, Activity Monitor, Console, Grab...). Through the emulated
+# Radeon a sheet's pulsing default button ("OK") renders as a white box, as Snow Leopard's
+# did with Quartz GL. A global preference doesn't override an app's Info.plist; the app's
+# own domain does (checked on Snow Leopard), so set it per app, for all users.
 if [ "$LEOPARD" = 1 ]; then
-  defaults write /Library/Preferences/.GlobalPreferences QuartzGLEnable -bool NO
-  chmod 644 /Library/Preferences/.GlobalPreferences.plist
+  defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
+  : > "$QGL_LIST"
+  for plist in /Applications/*.app/Contents/Info.plist /Applications/Utilities/*.app/Contents/Info.plist; do
+    grep -q QuartzGLEnable "$plist" 2>/dev/null || continue
+    id=$(defaults read "${plist%.plist}" CFBundleIdentifier 2>/dev/null) || continue
+    defaults write "/Library/Preferences/$id" QuartzGLEnable -bool NO
+    chmod 644 "/Library/Preferences/$id.plist"
+    echo "$id" >> "$QGL_LIST"
+  done
 fi
 echo "Installed. In UTM, turn on Sharing -> Clipboard Sharing for this VM; text is copied"
 echo "both ways once you are logged in."
