@@ -101,6 +101,41 @@ PYEOF
   cp "$K" "$WORK/vim/$P/$GUEST/Kernel/VMsvga2.kext/Contents/MacOS/VMsvga2"
 fi
 
+if [ "$GUEST" = snowleopard ]; then
+  # UTM change (vim-guest-padded-self-view.patch): Quartz GL samples a window's own backing
+  # (the masked self-copy behind a pulsing default button) with the backing's padded size,
+  # which VirtualIntelMac's live drawable view rejected, so it sampled a stale CPU image
+  # (frozen pulse, bold "OK"). Rebuild the x86_64 slices of GLEngine and
+  # libVIMPassthroughOpenGL from source with the fix; i386 stays VirtualIntelMac's prebuilt.
+  # The 10.9 SDK stubs record ApplicationServices 64.0.0; fix-dylib-compat.py lowers it to
+  # 10.6's 1.0.0, or dyld refuses the engine ("invalid code module").
+  echo "==> Rebuilding the x86_64 PassthroughOpenGL guest pair with the Quartz GL self-view fix"
+  git -C "$WORK/vim" checkout -q "$VIM_COMMIT" -- Source/PassthroughOpenGL Source/compat Source/probes \
+    Source/vendor/source/VMsvga2
+  git -C "$WORK/vim" apply "$HERE/vim-guest-padded-self-view.patch"
+  for s in 10.9:fcf88ce8ff0dd3248b97f4eb81c7909f2cc786725de277f4d05a2b935cc49de0 \
+           10.6:ad93f3e25c1ee71e457ced1a9c106c2e6741afb96252f259a5b7c625d1156fe8; do
+    v=${s%%:*}
+    curl -sfL -o "$WORK/gl-sdk.tar.xz" "https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX$v.sdk.tar.xz"
+    echo "${s#*:}  $WORK/gl-sdk.tar.xz" | shasum -a 256 -c - >/dev/null || { echo "$v SDK checksum mismatch" >&2; exit 1; }
+    mkdir -p "$WORK/gl-sdk"; tar -xf "$WORK/gl-sdk.tar.xz" -C "$WORK/gl-sdk"; rm "$WORK/gl-sdk.tar.xz"
+  done
+  B="$WORK/vim/Source/scripts/build-opengl-guest-gl-pair"
+  n=$(grep -n '^install_name_tool -change' "$B" | cut -d: -f1)
+  head -n "$n" "$B" | sed -e 's/ -arch i386//' -e 's/ -Werror / -Wno-error /' > "$WORK/vim/Source/scripts/build-gl-pair-x64"
+  chmod +x "$WORK/vim/Source/scripts/build-gl-pair-x64"
+  VIM_OPENGL_CC="$(xcrun -f clang)" VIM_OPENGL_SDK="$WORK/gl-sdk/MacOSX10.9.sdk" VIM_OPENGL_WIRE_SDK="$WORK/gl-sdk/MacOSX10.9.sdk" \
+  VIM_OPENGL_DISPATCH_SDK="$WORK/gl-sdk/MacOSX10.6.sdk" VIM_OPENGL_MIN_VERSION=10.6 VIM_GUEST_GL_PAIR_BUILD="$WORK/gl-pair" \
+    "$WORK/vim/Source/scripts/build-gl-pair-x64" >"$WORK/gl-pair.log" 2>&1 || { tail -40 "$WORK/gl-pair.log" >&2; echo "guest GL build failed" >&2; exit 1; }
+  for b in GLEngine libVIMPassthroughOpenGL.dylib; do
+    G="$WORK/vim/$P/$GUEST/GuestTools/$b"
+    lipo "$G" -replace x86_64 "$WORK/gl-pair/$b" -output "$WORK/$b.fixed"
+    "$PY" -I "$HERE/fix-dylib-compat.py" "$WORK/$b.fixed"
+    codesign --force --sign - --digest-algorithm=sha1,sha256 "$WORK/$b.fixed"
+    mv "$WORK/$b.fixed" "$G"
+  done
+fi
+
 echo "==> Building the $LABEL OpenCore disk (VirtualIntelMac build-opengl-firmware.py)"
 PYTHONPATH="$WORK/vim/Source/scripts" "$PY" "$WORK/vim/Source/scripts/build-opengl-firmware.py" \
   --guest "$GUEST" --output "$WORK/firmware" >/dev/null

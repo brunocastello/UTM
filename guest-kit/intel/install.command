@@ -216,14 +216,11 @@ register_esp_probe
 pmset -a sleep 0 >/dev/null 2>&1 || true
 pmset -a disablesleep 1 >/dev/null 2>&1 || true
 
-# 9. Snow Leopard: no Quartz GL backing stores. The firmware's AccelCaps (VirtualIntelMac's
-#    value, bit 1 for Mountain Lion's menu filters) lets 10.6 draw windows through GL, and
-#    the pulsing default button ("Done" in Sharing -> File Sharing -> Options) then renders
-#    with a washed-out fill and unsmoothed text. Off for every user and app; CPU drawing
-#    is what 10.6 uses by default on real Macs.
+# 9. Earlier kits turned Quartz GL off for every app on Snow Leopard (a workaround for the
+#    pulsing default button). The kit's GLEngine now fixes the cause (vim-guest-padded-self-view
+#    .patch), so apps that ask for Quartz GL get it again.
 if [ "$GUEST" = snowleopard ]; then
-  defaults write /Library/Preferences/.GlobalPreferences QuartzGLEnable -bool NO
-  chmod 644 /Library/Preferences/.GlobalPreferences.plist
+  defaults delete /Library/Preferences/.GlobalPreferences QuartzGLEnable 2>/dev/null || true
 fi
 
 rebuild_caches
