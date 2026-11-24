@@ -143,13 +143,13 @@ Mojave uses the **apple-gfx-pci** display instead of VMware SVGA, as in VirtualI
 The installer itself runs on VMware SVGA (the VirtualIntelMac `mojave` OpenCore disk).
 
 ```sh
-./build-mojave-kit.sh [outdir] --install-host
+./build-mojave-kit.sh [outdir]
 ```
 
 Output `MojaveGuestKit/`: `MojaveSupport.iso` (VirtualIntelMac's Mojave support disc plus
-`Install.command`) and `pvg-donor/` (the host ParavirtualizedGraphics framework that still
-speaks the Intel guest protocol, and Mojave's libLLVM shader repair). `--install-host` copies
-`pvg-donor` into UTM's cache (`~/Library/Containers/com.utmapp.UTM/Data/Library/Caches/qemu`).
+`Install.command`). The host side ships inside UTM.app, as in VirtualIntelMac:
+`Contents/Resources/pvg-donor` holds the ParavirtualizedGraphics binary that still speaks the
+Intel guest protocol and Mojave's libLLVM shader repair (`scripts/build_dependencies.sh`).
 The display helper is x86_64 and needs Rosetta.
 
 1. Install Mojave with the VMware SVGA display; reach the desktop.

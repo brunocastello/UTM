@@ -7,31 +7,27 @@
 #                        guest-macho/-prepare/-install tools) plus Install.command.
 #                        Its GL engine pair carries UTM's packed-vertex fix
 #                        (vim-packed-vertex.patch), rebuilt here for x86_64.
-#   pvg-donor/         - host side: the ParavirtualizedGraphics.framework that still
-#                        speaks the Intel guest protocol, and Mojave's GPUCompiler
-#                        libLLVM (VirtualIntelMac's checked-in, hash-verified donors).
-#                        --install-host copies it where UTM looks for it.
+# The host side (the ParavirtualizedGraphics donor and Mojave's libLLVM) ships inside
+# UTM.app (Contents/Resources/pvg-donor, scripts/build_dependencies.sh), as in VirtualIntelMac.
 #
-# Run on the Mac host:  ./build-mojave-kit.sh [outdir] [--install-host]
+# Run on the Mac host:  ./build-mojave-kit.sh [outdir]
 set -euo pipefail
 
 VIM_REPO=https://github.com/nfzerox/VirtualIntelMacOnAppleSilicon.git
 VIM_COMMIT=2861da9e265e557aef90319e4451487ed1fed553   # VirtualIntelMac 2.2
-UTM_CACHE="$HOME/Library/Containers/com.utmapp.UTM/Data/Library/Caches/qemu"
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-OUT=""; INSTALL_HOST=0
+OUT=""
 for a in "$@"; do
   case "$a" in
-    --install-host) INSTALL_HOST=1 ;;
-    -*) echo "usage: $0 [output-dir] [--install-host]" >&2; exit 64 ;;
+    -*) echo "usage: $0 [output-dir] " >&2; exit 64 ;;
     *) OUT=$a ;;
   esac
 done
 OUT=${OUT:-"$PWD/MojaveGuestKit"}
 [ -e "$OUT" ] && { echo "$OUT already exists" >&2; exit 1; }
 
-# VirtualIntelMac's host-donor extraction needs tarfile.data_filter (Python >= 3.12).
+# VirtualIntelMac's payload scripts need Python >= 3.12 (tarfile.data_filter).
 PY=""
 for c in python3.14 python3.13 python3.12 python3; do
   p=$(command -v "$c" || true)
@@ -56,7 +52,6 @@ git -C "$WORK/vim" checkout -q "$VIM_COMMIT" -- \
   Source/prebuilt/PassthroughOpenGL/mojave Source/prebuilt/tools Source/PassthroughOpenGL \
   Source/vendor/source/VMsvga2 Source/vendor/qemu/include/hw/display Source/vendor/qemu/hw/display/vim-vram-memory.h \
   Source/probes/opengl-packet-journal.inc \
-  Source/vendor/apple-silicon-host-inputs.tar.gz Source/vendor/apple-silicon-SHA256SUMS \
   Source/VirtualIntelMac/Assets.xcassets/mojaveIcon.imageset/art.png LICENSE
 SRC="$WORK/vim/Source"
 
@@ -131,34 +126,8 @@ chmod 755 "$DISC/Clipboard/guest-clipboard"
 hdiutil makehybrid -quiet -hfs -iso -joliet -hfs-volume-name 'Virtual Intel Mac Support' \
   -o "$WORK/MojaveSupport.iso" "$DISC"
 
-echo "==> Extracting the host donors (VirtualIntelMac extract_host_inputs, SHA-256 checked)"
-"$PY" -I - "$SRC" "$WORK/host" <<'PY'
-import hashlib, runpy, sys, tarfile
-from pathlib import Path
-src, dest = map(Path, sys.argv[1:])
-g = {'tarfile': tarfile, 'hashlib': hashlib}
-code = (src/'scripts/package-app-runtime.py').read_text()
-start = code.index('def extract_host_inputs'); end = code.index('\ndef ', start + 1)
-exec(code[start:end], g)
-print('donor sha256', g['extract_host_inputs'](src, dest))
-PY
-PVG=$(find "$WORK/host" -type d -name ParavirtualizedGraphics.framework | head -1)
-LLVM=$(find "$WORK/host" -path '*GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib' | head -1)
-[ -n "$PVG" ] && [ -n "$LLVM" ] || { echo "host donor archive layout not recognised" >&2; exit 1; }
-D="$WORK/pvg-donor/System/Library"
-mkdir -p "$D/Frameworks" "$D/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries"
-ditto "$PVG" "$D/Frameworks/ParavirtualizedGraphics.framework"
-cp "$LLVM" "$D/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/"
-codesign --force --sign - "$D/Frameworks/ParavirtualizedGraphics.framework"
-
 mkdir -p "$OUT"
-mv "$WORK/MojaveSupport.iso" "$WORK/pvg-donor" "$OUT/"
+mv "$WORK/MojaveSupport.iso" "$OUT/"
 echo "$VIM_COMMIT" > "$OUT/VirtualIntelMac-commit.txt"
-if [ "$INSTALL_HOST" = 1 ]; then
-  mkdir -p "$UTM_CACHE"
-  rm -rf "${UTM_CACHE:?}/pvg-donor"
-  ditto "$OUT/pvg-donor" "$UTM_CACHE/pvg-donor"
-  echo "==> Host donors installed in $UTM_CACHE/pvg-donor"
-fi
 echo "==> Done: $OUT"
 ls -l "$OUT"

@@ -1033,6 +1033,57 @@ build_pvg_helper () {
         -framework Foundation -framework Metal -framework CoreGraphics \
         "$QEMU_DIR/hw/display/apple-gfx-helper.m" "$QEMU_DIR/hw/display/apple-gfx-legacy-shadow.m" \
         "$QEMU_DIR/hw/display/compat/PVGHostAIRRepair.m" -o "$PREFIX/bin/apple-gfx-helper"
+    install_pvg_donor
+}
+
+# The helper's Apple donors, shipped inside the app as VirtualIntelMac does (Runtime/Donor):
+# the ParavirtualizedGraphics binary that still speaks the Intel guest protocol, and Mojave's
+# GPUCompiler libLLVM (shader repair). Extracted with VIM's own SHA-256 checked
+# extract_host_inputs from its checked-in archive. The app copies $PREFIX/pvg-donor to
+# Contents/Resources/pvg-donor; UTM points PVG_OOP_DONOR / PVG_HOST_AIR_LLVM there.
+install_pvg_donor () {
+    echo "${GREEN}Extracting PVG host donors...${NC}"
+    fetch_vim_sources
+    local py=""
+    for c in python3.14 python3.13 python3.12 python3; do
+        local p
+        p=$(command -v "$c" || true)
+        if [ -n "$p" ] && "$p" -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then py=$p; break; fi
+    done
+    if [ -z "$py" ]; then
+        echo "${RED}Python 3.12 or newer is required for the PVG donor extraction${NC}"
+        exit 1
+    fi
+    local stage
+    stage="$(cd "$BUILD_DIR" && pwd)/pvg-donor-stage"
+    rm -rf "$stage" "$PREFIX/pvg-donor"
+    mkdir -p "$stage/vendor" "$stage/host"
+    for f in apple-silicon-host-inputs.tar.gz apple-silicon-SHA256SUMS; do
+        git -C "$VIM_DIR" show "$VIM_PASSTHROUGH_OPENGL_COMMIT:Source/vendor/$f" > "$stage/vendor/$f"
+    done
+    "$py" -I - "$VIM_DIR/Source/scripts/package-app-runtime.py" "$stage" "$stage/host" <<'PY'
+import hashlib, sys, tarfile
+from pathlib import Path
+script, src, dest = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+code = Path(script).read_text()
+start = code.index('def extract_host_inputs'); end = code.index('\ndef ', start + 1)
+g = {'tarfile': tarfile, 'hashlib': hashlib}
+exec(code[start:end], g)
+print('PVG donor sha256', g['extract_host_inputs'](src, dest))
+PY
+    local pvg llvm d
+    pvg=$(find "$stage/host" -path '*ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics' -type f | head -1)
+    llvm=$(find "$stage/host" -path '*GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib' -type f | head -1)
+    if [ -z "$pvg" ] || [ -z "$llvm" ]; then
+        echo "${RED}PVG host donor archive layout not recognised${NC}"
+        exit 1
+    fi
+    d="$PREFIX/pvg-donor/System/Library"
+    mkdir -p "$d/Frameworks/ParavirtualizedGraphics.framework/Versions/A" \
+        "$d/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries"
+    cp "$pvg" "$d/Frameworks/ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics"
+    cp "$llvm" "$d/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib"
+    rm -rf "$stage"
 }
 
 fixup_all () {

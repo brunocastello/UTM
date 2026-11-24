@@ -395,9 +395,10 @@ import Virtualization // for getting network interfaces
         display.hardware.rawValue == "apple-gfx-pci"
     }
 
-    /// Apple frameworks the Intel guest kit installs for the out-of-process helper.
+    /// Apple donors the out-of-process helper loads, shipped inside the app (VirtualIntelMac's
+    /// Runtime/Donor), so nothing outside the bundle (such as the purgeable caches) can lose them.
     private var appleGfxDonorURL: URL {
-        resourceURL.appendingPathComponent("pvg-donor", isDirectory: true)
+        Bundle.main.resourceURL!.appendingPathComponent("pvg-donor", isDirectory: true)
     }
 
     /// Environment for the QEMU process, as VirtualIntelMac 2.2 sets it on Apple silicon.
