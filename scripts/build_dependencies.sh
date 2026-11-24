@@ -1072,16 +1072,16 @@ exec(code[start:end], g)
 print('PVG donor sha256', g['extract_host_inputs'](src, dest))
 PY
     local pvg llvm d
-    pvg=$(find "$stage/host" -path '*ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics' -type f | head -1)
+    # the whole framework (its Resources hold default.metallib), as VIM's copytree does
+    pvg=$(find "$stage/host" -type d -name ParavirtualizedGraphics.framework | head -1)
     llvm=$(find "$stage/host" -path '*GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib' -type f | head -1)
     if [ -z "$pvg" ] || [ -z "$llvm" ]; then
         echo "${RED}PVG host donor archive layout not recognised${NC}"
         exit 1
     fi
     d="$PREFIX/pvg-donor/System/Library"
-    mkdir -p "$d/Frameworks/ParavirtualizedGraphics.framework/Versions/A" \
-        "$d/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries"
-    cp "$pvg" "$d/Frameworks/ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics"
+    mkdir -p "$d/Frameworks" "$d/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries"
+    ditto "$pvg" "$d/Frameworks/ParavirtualizedGraphics.framework"
     cp "$llvm" "$d/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib"
     rm -rf "$stage"
 }
