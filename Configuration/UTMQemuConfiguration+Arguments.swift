@@ -303,6 +303,9 @@ import Virtualization // for getting network interfaces
                         "vgamem_mb=\(radeonVramMib)"
                         "renderer=metal"
                         "romfile=" // no ROM, OpenFirmware properties are set in boot-command
+                    } else if isClassicMacAccelDisplay(display) {
+                        // the PVMAC OpenGL stream lives in VRAM and needs at least 16 MiB
+                        "vgamem_mb=\(max(displays[0].vgaRamMib ?? 0, Self.classicMacAccelMinVramMib))"
                     } else if let vgaRamSize = displays[0].vgaRamMib, !isDisplayAppleGfx(display) {
                         "vgamem_mb=\(vgaRamSize)"
                     }
@@ -315,7 +318,7 @@ import Virtualization // for getting network interfaces
                         "passthrough-opengl-bridge=on"
                     }
                     #endif
-                    if display.hardware.rawValue == "VGA" && isClassicMacNewWorld {
+                    if isClassicMacAccelDisplay(display) {
                         // hardware cursor for the bundled Mac OS 9 qemu_vga.ndrv
                         "mac-accel=on"
                     }
@@ -404,7 +407,7 @@ import Virtualization // for getting network interfaces
     /// Environment for the QEMU process, as VirtualIntelMac 2.2 sets it on Apple silicon.
     var qemuEnvironment: [String: String] {
         guard isIntelMacGuest else {
-            return [:]
+            return classicMacAccelEnvironment
         }
         var environment = [
             // TCG fast paths (each is opt-in in QEMU)
@@ -429,6 +432,28 @@ import Virtualization // for getting network interfaces
             environment["QEMU_SHM_APP_GROUP"] = appGroup
         }
         return environment
+    }
+
+    /// Smallest VRAM for the Mac OS 9 OpenGL stream (QEMU's PVMAC_GL_MIN_VRAM).
+    private static let classicMacAccelMinVramMib = 16
+
+    /// Mac OS 9 / Mac OS X PowerPC VGA with the accelerated qemu_vga.ndrv (hardware cursor, OpenGL stream).
+    private func isClassicMacAccelDisplay(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        display.hardware.rawValue == "VGA" && isClassicMacNewWorld
+    }
+
+    /// The Mac OS 9 OpenGLLibrary reaches the host executor through the same in-process library
+    /// as the Intel guests.
+    private var classicMacAccelEnvironment: [String: String] {
+        #if os(macOS)
+        guard displays.contains(where: { isClassicMacAccelDisplay($0) }),
+              let frameworks = Bundle.main.privateFrameworksURL else {
+            return [:]
+        }
+        return ["VIM_PASSTHROUGH_OPENGL_INPROCESS_LIBRARY": frameworks.appendingPathComponent("VIMPassthroughOpenGLHost.framework/Versions/A/VIMPassthroughOpenGLHost").path]
+        #else
+        return [:]
+        #endif
     }
 
     /// VirtualIntelMac 2.2's out-of-process PVG settings (VIMSession.m).

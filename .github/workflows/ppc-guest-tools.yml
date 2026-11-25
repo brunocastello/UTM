@@ -32,6 +32,16 @@ jobs:
         with:
           name: ppc-guest-tools
           path: ${{ runner.temp }}/tools
+      - name: Mac OS 9 OpenGLLibrary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          # latest successful build of the OS 9 3D branch (public repo)
+          RUN=$(gh run list -R brunocastello/QemuMacDrivers -w build-ndrv.yml -b os9-3d -s success -L 1 --json databaseId -q '.[0].databaseId')
+          echo "QemuMacDrivers run $RUN"
+          gh run download "$RUN" -R brunocastello/QemuMacDrivers -n OpenGLLibrary-os9 -D "$RUNNER_TEMP/os9gl"
+          find "$RUNNER_TEMP/os9gl" -type f
       - name: GuestTools.iso
         run: |
           set -e
@@ -42,9 +52,19 @@ jobs:
           cp guest-kit/ppc/install.command "$ISO/Install.command"; chmod 755 "$ISO/Install.command"
           cp guest-kit/ppc/README.md "$ISO/ReadMe.md"
           cp "$RUNNER_TEMP/tools/LICENSE-VirtualIntelMac.txt" "$ISO/"
+          # Mac OS 9 3D: a real HFS file (resource fork, type shlb) plus the MacBinary
+          GL="$ISO/Mac OS 9 3D"; mkdir -p "$GL"
+          BIN=$(find "$RUNNER_TEMP/os9gl" -name OpenGLLibrary.bin | head -1)
+          python3 guest-kit/ppc/os9-3d/macbinary-to-hfs.py "$BIN" "$GL/OpenGLLibrary"
+          cp "$BIN" "$GL/OpenGLLibrary.bin"
+          cp guest-kit/ppc/os9-3d/ReadMe.txt "$GL/ReadMe.txt"
           hdiutil makehybrid -quiet -hfs -iso -joliet -default-volume-name "UTM Guest Kit PPC" \
             -o "$RUNNER_TEMP/kit/GuestTools.iso" "$ISO"
           ls -la "$RUNNER_TEMP/kit"
+          # best effort: confirm the HFS file kept its resource fork and type
+          hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/chk" "$RUNNER_TEMP/kit/GuestTools.iso" \
+            && { ls -lO@ "$RUNNER_TEMP/chk/Mac OS 9 3D" || true; xattr -l "$RUNNER_TEMP/chk/Mac OS 9 3D/OpenGLLibrary" || true; \
+                 hdiutil detach "$RUNNER_TEMP/chk" || true; } || echo "ISO verify skipped"
       - uses: actions/upload-artifact@v4
         with:
           name: ppc-guest-kit
