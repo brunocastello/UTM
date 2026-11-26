@@ -41,7 +41,8 @@ jobs:
           RUN=$(gh run list -R brunocastello/QemuMacDrivers -w build-ndrv.yml -b os9-3d -s success -L 1 --json databaseId -q '.[0].databaseId')
           echo "QemuMacDrivers run $RUN"
           gh run download "$RUN" -R brunocastello/QemuMacDrivers -n OpenGLLibrary-os9 -D "$RUNNER_TEMP/os9gl"
-          find "$RUNNER_TEMP/os9gl" -type f
+          gh run download "$RUN" -R brunocastello/QemuMacDrivers -n RAVELoader-os9 -D "$RUNNER_TEMP/os9rave"
+          find "$RUNNER_TEMP/os9gl" "$RUNNER_TEMP/os9rave" -type f
       - name: GuestTools.iso
         run: |
           set -e
@@ -57,13 +58,16 @@ jobs:
           BIN=$(find "$RUNNER_TEMP/os9gl" -name OpenGLLibrary.bin | head -1)
           python3 guest-kit/ppc/os9-3d/macbinary-to-hfs.py "$BIN" "$GL/OpenGLLibrary"
           cp "$BIN" "$GL/OpenGLLibrary.bin"
+          RBIN=$(find "$RUNNER_TEMP/os9rave" -name UTMRAVELoader.bin | head -1)
+          python3 guest-kit/ppc/os9-3d/macbinary-to-hfs.py "$RBIN" "$GL/UTM RAVE Loader"
+          cp "$RBIN" "$GL/UTM RAVE Loader.bin"
           cp guest-kit/ppc/os9-3d/ReadMe.txt "$GL/ReadMe.txt"
           hdiutil makehybrid -quiet -hfs -iso -joliet -default-volume-name "UTM Guest Kit PPC" \
             -o "$RUNNER_TEMP/kit/GuestTools.iso" "$ISO"
           ls -la "$RUNNER_TEMP/kit"
           # best effort: confirm the HFS file kept its resource fork and type
           hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/chk" "$RUNNER_TEMP/kit/GuestTools.iso" \
-            && { ls -lO@ "$RUNNER_TEMP/chk/Mac OS 9 3D" || true; xattr -l "$RUNNER_TEMP/chk/Mac OS 9 3D/OpenGLLibrary" || true; \
+            && { ls -lO@ "$RUNNER_TEMP/chk/Mac OS 9 3D" || true; xattr -l "$RUNNER_TEMP/chk/Mac OS 9 3D/OpenGLLibrary" "$RUNNER_TEMP/chk/Mac OS 9 3D/UTM RAVE Loader" || true; \
                  hdiutil detach "$RUNNER_TEMP/chk" || true; } || echo "ISO verify skipped"
       - uses: actions/upload-artifact@v4
         with:
