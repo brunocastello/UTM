@@ -316,7 +316,11 @@ import Virtualization // for getting network interfaces
             f()
         } else {
             for display in displays {
-                if isRadeonR100(display) {
+                if isIntelMacAppleGfxGuest && isDisplayAppleGfx(display), let mode = appleGfxInitialDisplayMode {
+                    // VirtualIntelMac's initial native mode (JSON: display-modes is an array property)
+                    f("-device")
+                    f("{\"driver\":\"apple-gfx-pci\",\"display-modes\":[\"\(mode)\"]}")
+                } else if isRadeonR100(display) {
                     // QEMU's ati-vga in R100 mode; ATI's own Mac OS 9 drivers drive it
                     let size = radeonR100InitialSize
                     f("-device")
@@ -339,7 +343,7 @@ import Virtualization // for getting network interfaces
                         "vgamem_mb=\(radeonVramMib)"
                         "renderer=metal"
                         "romfile=" // no ROM, OpenFirmware properties are set in boot-command
-                    } else if let vgaRamSize = displays[0].vgaRamMib {
+                    } else if let vgaRamSize = displays[0].vgaRamMib, !isDisplayAppleGfx(display) {
                         "vgamem_mb=\(vgaRamSize)"
                     }
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
@@ -408,10 +412,27 @@ import Virtualization // for getting network interfaces
     /// CPU profile, TCG fast paths and Hybrid Hypervisor.
     var isIntelMacGuest: Bool {
         #if os(macOS) && arch(arm64)
-        return system.architecture == .x86_64 && displays.contains { isDisplayPassthroughOpenGL($0) }
+        return system.architecture == .x86_64 && displays.contains { isDisplayPassthroughOpenGL($0) || isDisplayAppleGfx($0) }
         #else
         return false
         #endif
+    }
+
+    /// Mac OS X Intel guest on the paravirtualized display (Mojave and later): VirtualIntelMac 2.2
+    /// runs the Intel guest protocol out of process, in its x86_64 `apple-gfx-helper` under Rosetta,
+    /// with Apple frameworks from the Intel guest kit.
+    private var isIntelMacAppleGfxGuest: Bool {
+        isIntelMacGuest && displays.contains { isDisplayAppleGfx($0) }
+    }
+
+    private func isDisplayAppleGfx(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        display.hardware.rawValue == "apple-gfx-pci"
+    }
+
+    /// Apple donors the out-of-process helper loads, shipped inside the app (VirtualIntelMac's
+    /// Runtime/Donor), so nothing outside the bundle (such as the purgeable caches) can lose them.
+    private var appleGfxDonorURL: URL {
+        Bundle.main.resourceURL!.appendingPathComponent("pvg-donor", isDirectory: true)
     }
 
     /// Environment for the QEMU process, as VirtualIntelMac 2.2 sets it on Apple silicon.
@@ -436,7 +457,7 @@ import Virtualization // for getting network interfaces
             "ENGINE_TRACE": "0",
             // QEMU's exit status after a reset under -action reboot=shutdown
             "QEMU_REBOOT_EXIT_STATUS": "75",
-        ]
+        ].merging(appleGfxEnvironment) { $1 }
         // guest RAM as POSIX shared memory: the sandbox allows names under the app group only
         if let appGroup = appGroupIdentifier {
             environment["QEMU_SHM_APP_GROUP"] = appGroup
@@ -447,6 +468,37 @@ import Virtualization // for getting network interfaces
     /// Mac OS 9 / Mac OS X PowerPC VGA with the accelerated qemu_vga.ndrv (hardware cursor).
     private func isClassicMacAccelDisplay(_ display: UTMQemuConfigurationDisplay) -> Bool {
         display.hardware.rawValue == "VGA" && isClassicMacNewWorld
+    }
+
+    /// VirtualIntelMac 2.2's out-of-process PVG settings (VIMSession.m).
+    private var appleGfxEnvironment: [String: String] {
+        guard isIntelMacAppleGfxGuest else {
+            return [:]
+        }
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/apple-gfx-helper")
+        let donor = appleGfxDonorURL
+        var environment = [
+            "PVG_OOP_HELPER": helper.path,
+            "PVG_OOP_DONOR": donor.appendingPathComponent("System/Library/Frameworks/ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics").path,
+            // panel capability, so the guest can offer HiDPI modes
+            "PVG_OOP_SCALE_FACTOR": "2", "PVG_APP_DISPLAY_SCALE": "2",
+            "PVG_PRESERVE_IOSURFACE": "1", "PVG_SHADOW_COALESCE": "1",
+            "PVG_SHADOW_MAX_CHUNK": "1048576", "PVG_SHADOW_TEXTURE_PAGING": "1",
+        ]
+        // the helper starts at this size (full screen below a notch), not the whole panel
+        if let mode = appleGfxInitialDisplayMode, let size = mode.split(separator: "@").first {
+            environment["PVG_OOP_INITIAL_SIZE"] = String(size)
+        }
+        // Mojave's Metal shaders need its own GPUCompiler to repair them (AIR); the kit installs it for Mojave
+        let llvm = donor.appendingPathComponent("System/Library/PrivateFrameworks/GPUCompiler.framework/Versions/31001/Libraries/libLLVM.dylib")
+        if FileManager.default.fileExists(atPath: llvm.path) {
+            environment["PVG_HOST_AIR_LLVM"] = llvm.path
+        }
+        // Mojave's OpenGL commands reach the PassthroughOpenGL executor through vim-gl-headless
+        if let frameworks = Bundle.main.privateFrameworksURL {
+            environment["VIM_PASSTHROUGH_OPENGL_INPROCESS_LIBRARY"] = frameworks.appendingPathComponent("VIMPassthroughOpenGLHost.framework/Versions/A/VIMPassthroughOpenGLHost").path
+        }
+        return environment
     }
 
     /// The OpenGL passthrough bridge presents host-rendered IOSurfaces as Metal
@@ -501,6 +553,16 @@ import Virtualization // for getting network interfaces
         #else
         return nil
         #endif
+    }
+
+    /// Mojave and later on apple-gfx-pci start at the host's full-screen size, as VirtualIntelMac
+    /// starts them at its window size, instead of QEMU's default 1920x1080, which doesn't fit a
+    /// full-screen window (on a notch Mac, the area below the notch) and gets letterboxed.
+    private var appleGfxInitialDisplayMode: String? {
+        guard let host = hostFullScreenPixelSize, host.0 <= 8192, host.1 <= 8192 else {
+            return nil
+        }
+        return "\(host.0)x\(host.1)@60"
     }
 
     private func isDisplayPassthroughOpenGL(_ display: UTMQemuConfigurationDisplay) -> Bool {
@@ -998,7 +1060,7 @@ import Virtualization // for getting network interfaces
             f("-global")
             f("ICH9-LPC.disable_s4=1")
         }
-        if isIntelMacGuest {
+        if isIntelMacGuest && !isIntelMacAppleGfxGuest {
             // VirtualIntelMac (Snow Leopard … High Sierra): a period memory speed in the
             // DIMM records its MacPro5,1 profile keeps
             f("-smbios")
@@ -1077,7 +1139,8 @@ import Virtualization // for getting network interfaces
         if isIntelMacGuest {
             // As VirtualIntelMac on Apple silicon, for every Intel Mac guest: guest RAM in
             // POSIX shared memory, named under the app group so the sandbox allows it
-            // (QEMU_SHM_APP_GROUP). Builds without an app group (unsigned) use a file.
+            // (QEMU_SHM_APP_GROUP). The PVG helper maps it from a shared file descriptor.
+            // Builds without an app group (unsigned) use a file.
             f("-object")
             if appGroupIdentifier != nil {
                 "memory-backend-shm"
@@ -1092,6 +1155,13 @@ import Virtualization // for getting network interfaces
                 resourceURL
                 "share=on"
             }
+            f()
+        }
+        if isIntelMacAppleGfxGuest {
+            // VirtualIntelMac's GL command transport (no display): the guest's GL engine
+            // selector uses PassthroughOpenGL when this device is present
+            f("-device")
+            "vim-gl-headless"
             f()
         }
         if isMemoryLockUsed {

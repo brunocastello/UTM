@@ -7121,6 +7121,7 @@ enum QEMUDisplayDevice_x86_64: String, CaseIterable, QEMUDisplayDevice {
     case VGA
     case ati_vga = "ati-vga"
     case bochs_display = "bochs-display"
+    case apple_gfx_pci = "apple-gfx-pci"
     case isa_cirrus_vga = "isa-cirrus-vga"
     case isa_vga = "isa-vga"
     case ramfb
@@ -7143,6 +7144,7 @@ enum QEMUDisplayDevice_x86_64: String, CaseIterable, QEMUDisplayDevice {
         case .VGA: return "VGA"
         case .ati_vga: return "ati-vga"
         case .bochs_display: return "bochs-display"
+        case .apple_gfx_pci: return "macOS Paravirtualized Graphics PCI Display Controller (apple-gfx-pci)"
         case .isa_cirrus_vga: return "isa-cirrus-vga"
         case .isa_vga: return "isa-vga"
         case .ramfb: return "ram framebuffer standalone device (ramfb)"

@@ -271,7 +271,7 @@ extension VMDisplayQemuMetalWindowController {
     }
     
     override func spiceDynamicResolutionSupportDidChange(_ supported: Bool) {
-        guard displayConfig!.isDynamicResolution else {
+        guard displayConfig!.isDynamicResolution, !isFixedGuestPanel else {
             super.spiceDynamicResolutionSupportDidChange(supported)
             return
         }
@@ -382,11 +382,23 @@ extension VMDisplayQemuMetalWindowController {
         return targetFrameSize
     }
     
+    /// Mac OS X guests on apple-gfx-pci keep the fixed full-screen size UTM gives the helper, with
+    /// its list of sizes for Displays (as Snow Leopard and Mavericks keep their host panel): the
+    /// window only scales the image.
+    private var isFixedGuestPanel: Bool {
+        displayConfig?.hardware.rawValue == "apple-gfx-pci" && vmQemuConfig.system.architecture == .x86_64
+    }
+
     fileprivate func updateGuestResolution(for window: NSWindow, frameSize: NSSize) -> NSSize {
-        guard let vmDisplay = self.vmDisplay else { return frameSize }
+        guard let vmDisplay = self.vmDisplay, !isFixedGuestPanel else { return frameSize }
         let currentScreenScale = window.screen?.backingScaleFactor ?? 1.0
         let nativeScale = displayConfig!.isNativeResolution ? currentScreenScale : 1.0
-        let targetSize = window.contentRect(forFrameRect: CGRect(origin: .zero, size: frameSize)).size
+        var targetSize = window.contentRect(forFrameRect: CGRect(origin: .zero, size: frameSize)).size
+        if #available(macOS 12, *), isFullScreen, let screen = window.screen, screen.safeAreaInsets.top > 0 {
+            // on a Mac with a notch the full-screen frame includes the notch strip, but the
+            // display is shown below it: ask the guest for the visible area only
+            targetSize = CGSize(width: screen.frame.width, height: screen.frame.height - screen.safeAreaInsets.top)
+        }
         let targetSizeScaled = displayConfig!.isNativeResolution ? targetSize.applying(CGAffineTransform(scaleX: nativeScale, y: nativeScale)) : targetSize
         logger.debug("Requesting resolution: (\(targetSizeScaled.width), \(targetSizeScaled.height))")
         let bounds = CGRect(origin: .zero, size: targetSizeScaled)
@@ -441,6 +453,10 @@ extension VMDisplayQemuMetalWindowController {
     
     func windowDidEnterFullScreen(_ notification: Notification) {
         isFullScreen = true
+        if isDisplaySizeDynamic, let window = window {
+            // the resize during the transition ran before isFullScreen was set
+            _ = updateGuestResolution(for: window, frameSize: window.frame.size)
+        }
         if isFullScreenAutoCapture {
             captureMouse()
         }
@@ -494,7 +510,7 @@ extension VMDisplayQemuMetalWindowController {
     }
 
     func restoreDynamicResolution(for window: NSWindow) {
-        guard let resolution = vm.registryEntry.resolutionSettings[id] else {
+        guard let resolution = vm.registryEntry.resolutionSettings[id], !isFixedGuestPanel else {
             return
         }
         if resolution.isFullscreen && !isFullScreen {
