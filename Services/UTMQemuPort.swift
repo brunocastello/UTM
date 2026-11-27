@@ -62,8 +62,15 @@ import CocoaSpice
     private var cachedError: String?
     private var cachedData: Data?
 
+    /// Ends each JSON command with a newline. QEMU's agent ignores the whitespace; agents that
+    /// read one command per line (VirtualIntelMac's Mac OS X guest agent) need it.
+    @objc var isLineDelimited = false
+
     func write(_ data: Data) {
         port.write(data)
+        if isLineDelimited && data.last == UInt8(ascii: "}") {
+            port.write(Data([UInt8(ascii: "\n")]))
+        }
     }
     
     @objc init(from port: CSPort) {

@@ -32,6 +32,8 @@ NSString *const kUTMErrorDomain = @"com.utmapp.utm";
 @property (nonatomic) NSMutableArray<CSDisplay *> *mutableDisplays;
 @property (nonatomic, readwrite, nullable) CSInput *primaryInput;
 @property (nonatomic, readwrite, nullable) CSPort *primarySerial;
+@property (nonatomic, readwrite, nullable) CSPort *vimClipboardPort;
+@property (nonatomic, readwrite, nullable) CSPort *vimDisplayPort;
 @property (nonatomic) NSMutableArray<CSPort *> *mutableSerials;
 #if defined(WITH_USB)
 @property (nonatomic, readwrite, nullable) CSUSBManager *primaryUsbManager;
@@ -161,6 +163,8 @@ NSString *const kUTMErrorDomain = @"com.utmapp.utm";
         [self.mutableDisplays removeAllObjects];
         self.primaryInput = nil;
         self.primarySerial = nil;
+        self.vimClipboardPort = nil;
+        self.vimDisplayPort = nil;
         [self.mutableSerials removeAllObjects];
 #if defined(WITH_USB)
         self.primaryUsbManager = nil;
@@ -279,11 +283,18 @@ NSString *const kUTMErrorDomain = @"com.utmapp.utm";
         if ([port.name isEqualToString:@"org.qemu.guest_agent.0"]) {
 #if !defined(WITH_REMOTE)
             UTMQemuPort *qemuPort = [[UTMQemuPort alloc] initFrom:port];
+            qemuPort.isLineDelimited = YES;
             [self.connectDelegate qemuInterface:self didCreateGuestAgentPort:qemuPort];
 #endif
         }
         if ([port.name isEqualToString:@"com.utmapp.terminal.0"]) {
             self.primarySerial = port;
+        }
+        if ([port.name isEqualToString:@"org.vim.clipboard"]) {
+            self.vimClipboardPort = port;
+        }
+        if ([port.name isEqualToString:@"org.vim.display"]) {
+            self.vimDisplayPort = port;
         }
         if ([port.name hasPrefix:@"com.utmapp.terminal."]) {
             [self.mutableSerials addObject:port];
@@ -297,6 +308,12 @@ NSString *const kUTMErrorDomain = @"com.utmapp.utm";
         if ([port.name isEqualToString:@"org.qemu.monitor.qmp.0"]) {
         }
         if ([port.name isEqualToString:@"org.qemu.guest_agent.0"]) {
+        }
+        if (self.vimClipboardPort == port) {
+            self.vimClipboardPort = nil;
+        }
+        if (self.vimDisplayPort == port) {
+            self.vimDisplayPort = nil;
         }
         if ([port.name hasPrefix:@"com.utmapp.terminal."]) {
             [self.mutableSerials removeObject:port];

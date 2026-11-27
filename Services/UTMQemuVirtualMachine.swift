@@ -128,6 +128,11 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     /// Pipe interface (alternative to UTMSpiceIO)
     private var pipeInterface: UTMPipeInterface?
 
+    #if os(macOS)
+    /// Text clipboard for Mac OS X guests with VirtualIntelMac's helpers
+    @MainActor private var intelMacClipboard: UTMIntelMacClipboard?
+    #endif
+
     /// Directory of the files created for a remote session, removed when the session ends
     private var remoteSessionURL: URL?
 
@@ -525,6 +530,20 @@ extension UTMQemuVirtualMachine {
         // save ioService and let it set the delegate
         self.ioService = interface as? UTMSpiceIO
         self.pipeInterface = interface as? UTMPipeInterface
+        #if os(macOS)
+        let isIntelMacGuest = await config.isIntelMacGuest
+        let isIntelMacPassthroughGuest = await config.isIntelMacPassthroughGuest
+        let hasClipboardSharing = await config.sharing.hasClipboardSharing
+        if isIntelMacGuest && hasClipboardSharing, let ioService = interface as? UTMSpiceIO {
+            // Mojave and later reach the helper over VirtIO; older guests over a serial port
+            let isVirtio = !isIntelMacPassthroughGuest
+            await MainActor.run {
+                let clipboard = UTMIntelMacClipboard(vm: self, ioService: ioService, isVirtio: isVirtio)
+                clipboard.start()
+                self.intelMacClipboard = clipboard
+            }
+        }
+        #endif
         self.isRunningAsDisposible = isRunningAsDisposible
         
         // test out snapshots
@@ -885,6 +904,12 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
         #endif
         swtpm?.stop()
         swtpm = nil
+        #if os(macOS)
+        Task { @MainActor in
+            intelMacClipboard?.stop()
+            intelMacClipboard = nil
+        }
+        #endif
         ioService = nil
         ioServiceDelegate = nil
         pipeInterface?.disconnect()

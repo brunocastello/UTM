@@ -411,6 +411,11 @@ import Virtualization // for getting network interfaces
         #endif
     }
 
+    /// Mac OS X Intel guest on VMware SVGA with OpenGL passthrough (Snow Leopard … High Sierra).
+    var isIntelMacPassthroughGuest: Bool {
+        isIntelMacGuest && !isIntelMacAppleGfxGuest
+    }
+
     /// Mac OS X Intel guest on the OpenGL passthrough card: gets VirtualIntelMac 2.2's
     /// CPU profile, TCG fast paths and Hybrid Hypervisor.
     var isIntelMacGuest: Bool {
@@ -1755,7 +1760,13 @@ import Virtualization // for getting network interfaces
             f("-device")
             f("virtio-serial")
             f("-device")
-            f("virtserialport,chardev=org.qemu.guest_agent,name=org.qemu.guest_agent.0")
+            if isIntelMacPassthroughGuest {
+                // Snow Leopard … High Sierra have no VirtIO console driver: VirtualIntelMac's
+                // root agent (QGA protocol) reads COM2 (/dev/cu.serial2)
+                f("isa-serial,chardev=org.qemu.guest_agent,index=1")
+            } else {
+                f("virtserialport,chardev=org.qemu.guest_agent,name=org.qemu.guest_agent.0")
+            }
             f("-chardev")
             if isRemoteSpice {
                 "pipe"
@@ -1767,6 +1778,21 @@ import Virtualization // for getting network interfaces
             }
             "id=org.qemu.guest_agent"
             f()
+        }
+        if isIntelMacPassthroughGuest && sharing.hasClipboardSharing && !isRemoteSpice {
+            // VirtualIntelMac's text clipboard helper uses COM1 (/dev/cu.serial1) on these guests
+            f("-chardev")
+            f("spiceport,name=org.vim.clipboard,id=vimclipboard")
+            f("-device")
+            f("isa-serial,chardev=vimclipboard,index=0")
+        }
+        if isIntelMacAppleGfxGuest && sharing.hasClipboardSharing && !isRemoteSpice &&
+            system.architecture.hasAgentSupport && system.target.hasAgentSupport {
+            // Mojave and later: the helper finds its VirtIO console port by name, as in VirtualIntelMac
+            f("-chardev")
+            f("spiceport,name=org.vim.clipboard,id=vimclipboard")
+            f("-device")
+            f("virtserialport,chardev=vimclipboard,name=org.vim.clipboard")
         }
         if isSpiceAgentUsed {
             f("-device")
