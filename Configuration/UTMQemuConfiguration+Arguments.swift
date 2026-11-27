@@ -1824,6 +1824,15 @@ import Virtualization // for getting network interfaces
             f("-device")
             f("virtserialport,chardev=vimclipboard,name=org.vim.clipboard")
         }
+        if isIntelMacAppleGfxGuest && !isRemoteSpice &&
+            system.architecture.hasAgentSupport && system.target.hasAgentSupport {
+            // The donated framebuffer drivers don't report display sleep to the host: the guest
+            // helper does, on its own channel (VirtualIntelMac's display power observer)
+            f("-chardev")
+            f("spiceport,name=org.vim.display,id=vimdisplay")
+            f("-device")
+            f("virtserialport,chardev=vimdisplay,name=org.vim.display")
+        }
         if isSpiceAgentUsed {
             f("-device")
             f("virtserialport,chardev=vdagent,name=com.redhat.spice.0")
