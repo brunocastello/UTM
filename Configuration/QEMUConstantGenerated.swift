@@ -6853,6 +6853,7 @@ enum QEMUDisplayDevice_or1k: String, CaseIterable, QEMUDisplayDevice {
 }
 
 enum QEMUDisplayDevice_ppc: String, CaseIterable, QEMUDisplayDevice {
+    case ati_radeon_7000 = "ati-radeon-7000"
     case ati_radeon_9000 = "ati-radeon-9000"
     case ati_radeon_9700 = "ati-radeon-9700"
     case cirrus_vga = "cirrus-vga"
@@ -6868,6 +6869,7 @@ enum QEMUDisplayDevice_ppc: String, CaseIterable, QEMUDisplayDevice {
 
     var prettyValue: String {
         switch self {
+        case .ati_radeon_7000: return "ATI Radeon 7000 (ati-radeon-7000)"
         case .ati_radeon_9000: return "ATI Radeon 9000 (ati-radeon-9000)"
         case .ati_radeon_9700: return "ATI Radeon 9700 (ati-radeon-9700)"
         case .cirrus_vga: return "Cirrus CLGD 54xx VGA (cirrus-vga)"
@@ -6885,6 +6887,7 @@ enum QEMUDisplayDevice_ppc: String, CaseIterable, QEMUDisplayDevice {
 }
 
 enum QEMUDisplayDevice_ppc64: String, CaseIterable, QEMUDisplayDevice {
+    case ati_radeon_7000 = "ati-radeon-7000"
     case ati_radeon_9000 = "ati-radeon-9000"
     case ati_radeon_9700 = "ati-radeon-9700"
     case cirrus_vga = "cirrus-vga"
@@ -6902,6 +6905,7 @@ enum QEMUDisplayDevice_ppc64: String, CaseIterable, QEMUDisplayDevice {
 
     var prettyValue: String {
         switch self {
+        case .ati_radeon_7000: return "ATI Radeon 7000 (ati-radeon-7000)"
         case .ati_radeon_9000: return "ATI Radeon 9000 (ati-radeon-9000)"
         case .ati_radeon_9700: return "ATI Radeon 9700 (ati-radeon-9700)"
         case .cirrus_vga: return "Cirrus CLGD 54xx VGA (cirrus-vga)"

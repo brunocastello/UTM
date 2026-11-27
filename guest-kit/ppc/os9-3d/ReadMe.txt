@@ -35,3 +35,22 @@ Uninstall
 
 If a file looks like a plain document, use the .bin copy instead and
 expand it with StuffIt Expander.
+
+ATI Radeon 7000 display (Mac OS 9, mac99)
+=========================================
+
+The "ATI Radeon 7000" display card uses ATI's own Mac OS 9 drivers, not
+the qemu_vga driver. UTM RAVE Loader and this folder's OpenGLLibrary are
+for the "VGA" card only; with the Radeon 7000 keep Apple's OpenGLLibrary
+and do not install UTM RAVE Loader.
+
+Install
+1. Install ATI's "OS 9 Drivers (January 2005)" in the guest.
+2. In System Folder > Extensions, move these into "Extensions (Disabled)"
+   (they crash the boot with this card): the Rage 128, Rage Pro and
+   Radeon 8500 extensions, and ATI's "Video" extensions of those cards.
+3. Keep: ATI Extension, ATI Graphics Accelerator, ATI ROM Xtender,
+   ATI Radeon 3D Accelerator, ATI Resource Manager, ATI Video Memory
+   Manager and ATI Monitor.
+4. Restart. The size is picked in Monitors; UTM starts the card at the
+   host window size.

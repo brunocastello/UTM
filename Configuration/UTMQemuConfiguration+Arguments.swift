@@ -294,6 +294,20 @@ import Virtualization // for getting network interfaces
                     // VirtualIntelMac's initial native mode (JSON: display-modes is an array property)
                     f("-device")
                     f("{\"driver\":\"apple-gfx-pci\",\"display-modes\":[\"\(mode)\"]}")
+                } else if isRadeonR100(display) {
+                    // QEMU's ati-vga in R100 mode; ATI's own Mac OS 9 drivers drive it
+                    let size = radeonR100InitialSize
+                    f("-device")
+                    "ati-vga"
+                    "id=ati0"
+                    "model=r100"
+                    "vgamem_mb=\(display.vgaRamMib ?? Self.radeonR100DefaultVramMib)"
+                    "romfile=" // OpenBIOS (openbios-ppc-r100-retail) builds the device node
+                    "guest_hwcursor=off"
+                    "xres=\(size.0)"
+                    "yres=\(size.1)"
+                    "refresh_rate=60000"
+                    f()
                 } else if !shouldSkipDisplay(display) {
                     f("-device")
                     filterDisplayIfRemote(display.hardware)
@@ -627,6 +641,26 @@ import Virtualization // for getting network interfaces
     /// The Radeon 9000 (RV250) for Mac OS X 10.2 Jaguar, which has no R300 driver.
     private func isRadeonRV250(_ display: UTMQemuConfigurationDisplay) -> Bool {
         isClassicMacNewWorld && display.hardware.rawValue == QEMUDisplayDevice_ppc.ati_radeon_9000.rawValue
+    }
+
+    private static let radeonR100DefaultVramMib = 32
+
+    /// The Radeon 7000 (R100) for Mac OS 9: ati-vga with ATI's own drivers, no qemu_vga NDRV.
+    private func isRadeonR100(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        isClassicMacNewWorld && display.hardware.rawValue == QEMUDisplayDevice_ppc.ati_radeon_7000.rawValue
+    }
+
+    private var isRadeonR100Used: Bool {
+        displays.contains { isRadeonR100($0) }
+    }
+
+    /// Resolution the guest starts in: the host's full-screen size in points, capped to what
+    /// the card's EDID should offer; 1024x768 when unknown.
+    private var radeonR100InitialSize: (Int, Int) {
+        guard let host = hostFullScreenPixelSize else {
+            return (1024, 768)
+        }
+        return (min(host.0 / host.2, 1600) & ~1, min(host.1 / host.2, 1200) & ~1)
     }
 
     private func isRadeon(_ display: UTMQemuConfigurationDisplay) -> Bool {
@@ -993,6 +1027,10 @@ import Virtualization // for getting network interfaces
             }
             f("-global")
             f("uni-north-pci.agp-capable=on")
+        }
+        if isRadeonR100Used && !hasCustomBios {
+            f("-bios")
+            f("openbios-ppc-r100-retail")
         }
         if isClassicMacNewWorld {
             let ndrvloader = resourceURL.appendingPathComponent("ppc-ndrvloader")
