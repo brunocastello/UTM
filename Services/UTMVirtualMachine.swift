@@ -207,6 +207,19 @@ protocol UTMVirtualMachineDelegate: AnyObject {
     ///   - vm: Virtual machine
     ///   - success: True if installation is successful
     func virtualMachine(_ vm: any UTMVirtualMachine, didCompleteInstallation success: Bool)
+
+    /// Called when the VM starts to get the rate the display will be rendered at
+    ///
+    /// Will always be called from the main thread.
+    /// - Parameter vm: Virtual machine
+    /// - Returns: Refresh rate in Hz or nil if there is no local display
+    @MainActor func virtualMachineDisplayRefreshRate(_ vm: any UTMVirtualMachine) -> Int?
+}
+
+extension UTMVirtualMachineDelegate {
+    @MainActor func virtualMachineDisplayRefreshRate(_ vm: any UTMVirtualMachine) -> Int? {
+        nil
+    }
 }
 
 /// Virtual machine state
@@ -397,6 +410,9 @@ extension UTMVirtualMachine {
         let newPath = Self.virtualMachinePath(for: config.information.name, in: existingPath.deletingLastPathComponent())
         try await config.save(to: existingPath)
         try await updateRegistryFromConfig()
+        // use the registry's file URLs now rather than when its observer next runs, so that a
+        // start right after saving opens the files the same way it would after a relaunch
+        updateConfigFromRegistry()
         let hasRenamed: Bool
         if !isShortcut && existingPath.path != newPath.path {
             try await Task.detached {
@@ -462,6 +478,32 @@ extension UTMVirtualMachine {
     
     var name: String {
         config.information.name
+    }
+}
+
+// MARK: - Suspend
+
+extension UTMVirtualMachine {
+    /// Pauses the VM and saves its state to disk to resume from. A VM whose state cannot be
+    /// saved is not paused, and one whose save fails is resumed, so that it keeps running.
+    func pauseAndSaveState() async throws {
+        if let snapshotUnsupportedError = snapshotUnsupportedError {
+            throw snapshotUnsupportedError
+        }
+        try await pause()
+        do {
+            try await saveSnapshot(name: nil)
+        } catch {
+            // resuming discards a state that was saved before a later step failed
+            if await !registryEntry.isSuspended {
+                do {
+                    try await resume()
+                } catch {
+                    logger.error("Failed to resume after the state could not be saved: \(error.localizedDescription)")
+                }
+            }
+            throw error
+        }
     }
 }
 

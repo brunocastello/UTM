@@ -54,6 +54,11 @@ struct UTMQemuConfigurationQEMU: Codable {
     
     /// If true, emulate a PS/2 controller instead of relying on USB emulation.
     var hasPS2Controller: Bool = false
+
+    /// Add an interrupt remapping IOMMU for x86_64 q35 guests using the hypervisor on Intel.
+    var hasInterruptRemapping: Bool = true
+    /// Lock guest RAM in host memory for x86_64 guests using the hypervisor on Intel.
+    var hasMemoryLock: Bool = true
     
     /// QEMU machine property that overrides the default property defined by UTM.
     var machinePropertyOverride: String?
@@ -76,6 +81,9 @@ struct UTMQemuConfigurationQEMU: Codable {
     /// Set to a password shared with the client. Not saved.
     var spiceServerPassword: String?
 
+    /// Refresh rate (Hz) of the host display the VM is shown on, advertised in the guest EDID. Not saved.
+    var hostRefreshRate: Int?
+
     /// When resetting UEFI vars, also set up Secure Boot keys
     var hasPreloadedSecureBootKeys: Bool = false
 
@@ -89,6 +97,8 @@ struct UTMQemuConfigurationQEMU: Codable {
         case hasTSO = "TSO"
         case hasRTCLocalTime = "RTCLocalTime"
         case hasPS2Controller = "PS2Controller"
+        case hasInterruptRemapping = "InterruptRemapping"
+        case hasMemoryLock = "MemoryLock"
         case machinePropertyOverride = "MachinePropertyOverride"
         case additionalArguments = "AdditionalArguments"
     }
@@ -107,6 +117,8 @@ struct UTMQemuConfigurationQEMU: Codable {
         hasTSO = try values.decodeIfPresent(Bool.self, forKey: .hasTSO) ?? false
         hasRTCLocalTime = try values.decode(Bool.self, forKey: .hasRTCLocalTime)
         hasPS2Controller = try values.decode(Bool.self, forKey: .hasPS2Controller)
+        hasInterruptRemapping = try values.decodeIfPresent(Bool.self, forKey: .hasInterruptRemapping) ?? true
+        hasMemoryLock = try values.decodeIfPresent(Bool.self, forKey: .hasMemoryLock) ?? true
         machinePropertyOverride = try values.decodeIfPresent(String.self, forKey: .machinePropertyOverride)
         additionalArguments = try values.decode([QEMUArgument].self, forKey: .additionalArguments)
         if let dataURL = decoder.userInfo[.dataURL] as? URL {
@@ -127,6 +139,8 @@ struct UTMQemuConfigurationQEMU: Codable {
         try container.encode(hasTSO, forKey: .hasTSO)
         try container.encode(hasRTCLocalTime, forKey: .hasRTCLocalTime)
         try container.encode(hasPS2Controller, forKey: .hasPS2Controller)
+        try container.encode(hasInterruptRemapping, forKey: .hasInterruptRemapping)
+        try container.encode(hasMemoryLock, forKey: .hasMemoryLock)
         try container.encodeIfPresent(machinePropertyOverride, forKey: .machinePropertyOverride)
         try container.encode(additionalArguments, forKey: .additionalArguments)
     }
@@ -144,16 +158,47 @@ struct UTMQemuConfigurationQEMU: Codable {
     }
 }
 
+// MARK: - Editing rules
+
+extension UTMQemuConfigurationQEMU {
+    /// Adds or removes the TPM. A new TPM resets the UEFI variables so the Secure Boot
+    /// keys can be preloaded where the machine supports Secure Boot; removing it drops
+    /// the key preload.
+    mutating func setTPMDevice(_ hasTPMDevice: Bool, for system: UTMQemuConfigurationSystem) {
+        self.hasTPMDevice = hasTPMDevice
+        if hasTPMDevice {
+            isUefiVariableResetRequested = true
+            hasPreloadedSecureBootKeys = system.hasSecureBootSupport
+        } else {
+            hasPreloadedSecureBootKeys = false
+        }
+    }
+    
+    /// Requests or cancels a reset of the UEFI variables; keys are only preloaded into reset variables.
+    mutating func setUefiVariableResetRequested(_ isRequested: Bool) {
+        isUefiVariableResetRequested = isRequested
+        if !isRequested {
+            hasPreloadedSecureBootKeys = false
+        }
+    }
+    
+    /// Secure Boot keys can be preloaded into reset UEFI variables when a TPM is present
+    /// and the machine supports Secure Boot.
+    func canPreloadSecureBootKeys(for system: UTMQemuConfigurationSystem) -> Bool {
+        isUefiVariableResetRequested && hasTPMDevice && system.hasSecureBootSupport
+    }
+}
+
 // MARK: - Default construction
 
 extension UTMQemuConfigurationQEMU {
     init(forArchitecture architecture: QEMUArchitecture, target: any QEMUTarget) {
         self.init()
         let rawTarget = target.rawValue
-        if rawTarget.hasPrefix("pc") || rawTarget.hasPrefix("q35") {
+        if target.isPcOrQ35Machine {
             hasUefiBoot = true
             hasRNGDevice = true
-        } else if Self.uefiImagePrefix(forArchitecture: architecture) != nil && (rawTarget.hasPrefix("virt-") || rawTarget == "virt") {
+        } else if architecture.hasUefiSupport && (rawTarget.hasPrefix("virt-") || rawTarget == "virt") {
             hasUefiBoot = true
             hasRNGDevice = true
         }
@@ -191,7 +236,8 @@ extension UTMQemuConfigurationQEMU {
             // save EFI variables
             let resourceURL = Bundle.main.url(forResource: "qemu", withExtension: nil)!
             let templateVarsURL: URL
-            let secure = hasPreloadedSecureBootKeys ? "-secure" : ""
+            // only machines with Secure Boot support ship variables with the keys preloaded
+            let secure = hasPreloadedSecureBootKeys && system.hasSecureBootSupport ? "-secure" : ""
             if let prefix = Self.uefiImagePrefix(forArchitecture: system.architecture, isVars: true) {
                 templateVarsURL = resourceURL.appendingPathComponent("\(prefix)\(secure)-vars.fd")
             } else {
@@ -221,9 +267,10 @@ extension UTMQemuConfigurationQEMU {
         } else if FileManager.default.fileExists(atPath: possibleTpmDataURL.path) {
             existing.append(possibleTpmDataURL) // do not delete any existing TPM data
         }
+        // set like the decoder does, so a VM created in this session logs too
+        debugLogURL = dataURL.appendingPathComponent(QEMUPackageFileName.debugLog.rawValue)
         if hasDebugLog {
-            let debugLogURL = dataURL.appendingPathComponent(QEMUPackageFileName.debugLog.rawValue)
-            existing.append(debugLogURL)
+            existing.append(debugLogURL!)
         }
         return existing
     }

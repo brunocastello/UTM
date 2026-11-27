@@ -32,7 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak) id<QEMULauncherDelegate> launcherDelegate;
 @property (nonatomic, nullable) QEMULogging *logging;
 @property (nonatomic) BOOL hasDebugLog;
-/// Extra variables for the QEMU process (per-guest tuning); applied on assignment.
+/// Merged into the environment after every other setting, so these values take precedence.
 @property (nonatomic, nullable, copy) NSDictionary<NSString *, NSString *> *extraEnvironment;
 /// QEMU ended on a guest or monitor reset that asked to start the VM again (QEMU_REBOOT_EXIT_STATUS)
 @property (nonatomic, readonly) BOOL didRequestRestart;

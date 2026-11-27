@@ -163,6 +163,9 @@ final class UTMQemuVirtualMachine: UTMSpiceVirtualMachine {
     @MainActor private var intelMacDisplayPower: UTMIntelMacClipboard?
     #endif
 
+    /// Directory of the files created for a remote session, removed when the session ends
+    private var remoteSessionURL: URL?
+
     private let qemuVM = QEMUVirtualMachine()
     
     /// QEMU Process interface
@@ -318,14 +321,30 @@ extension UTMQemuVirtualMachine {
     static var canRunD3DMetal: Bool {
         #if os(macOS) && arch(arm64)
         if #available(macOS 13, *) {
-            return VZLinuxRosettaDirectoryShare.availability == .installed
+            return FileManager.default.fileExists(atPath: "/Library/Apple/usr/libexec/oah/runtime")
         } else {
             return false
         }
+        #elseif os(macOS) && arch(x86_64)
+        // D3DMetal also requires Apple silicon: on an Intel Mac its DXGIFactory
+        // shows an alert and exits, which hangs the render server. An x86_64
+        // build can only use it when translated by Rosetta.
+        return isTranslatedByRosetta
         #else
         return true
         #endif
     }
+
+    #if os(macOS) && arch(x86_64)
+    private static var isTranslatedByRosetta: Bool {
+        var translated: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("sysctl.proc_translated", &translated, &size, nil, 0) == 0 else {
+            return false
+        }
+        return translated == 1
+    }
+    #endif
 
     @MainActor private func qemuEnsureEfiVarsAvailable() async throws {
         guard let efiVarsURL = config.qemu.efiVarsURL else {
@@ -351,7 +370,7 @@ extension UTMQemuVirtualMachine {
         }
         #endif
         for display in await config.displays {
-            if display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl") {
+            if display.isGLSupported {
                 return UTMQemuVirtualMachineError.qemuError(NSLocalizedString("Suspend is not supported when GPU acceleration is enabled.", comment: "UTMQemuVirtualMachine"))
             }
         }
@@ -363,10 +382,14 @@ extension UTMQemuVirtualMachine {
         return nil
     }
     
-    private func _start(options: UTMVirtualMachineStartOptions) async throws {
+    private func _start(options: UTMVirtualMachineStartOptions, environment: [String: String]) async throws {
         // check if we can actually start this VM
         guard await isSupported else {
             throw UTMQemuVirtualMachineError.emulationNotSupported
+        }
+        let networks = await config.networks
+        if !UTMCapabilities.current.contains(.hasVmnetEntitlement) && networks.contains(where: { $0.isVmnet }) {
+            throw UTMQemuVirtualMachineError.vmnetNotEntitled
         }
 
         // create QEMU resource cache if needed
@@ -391,6 +414,7 @@ extension UTMQemuVirtualMachine {
         #endif
         await MainActor.run {
             config.qemu.isDisposable = isRunningAsDisposible
+            config.qemu.hostRefreshRate = isRemoteSession ? nil : delegate?.virtualMachineDisplayRefreshRate(self)
             #if WITH_SERVER
             config.qemu.spiceServerPort = spicePort?.internalPort
             config.qemu.spiceServerPassword = spicePassword
@@ -421,9 +445,10 @@ extension UTMQemuVirtualMachine {
         system.vulkanDriver = try vulkanDriver
         system.directXDriver = directXDriver
         system.shmemDirectoryURL = await config.shmemDirectoryURL
-        system.appSandboxGroupId = await config.appGroupIdentifier
+        system.appSandboxGroupId = await config.sharedMemoryGroupIdentifier
         system.hasDebugLog = hasDebugLog
-        system.extraEnvironment = await config.qemuEnvironment
+        // last, so it overrides any variable set above; per-guest tuning first
+        system.extraEnvironment = (await config.qemuEnvironment).merging(environment) { _, caller in caller }
         launchedSystem = system
         try Task.checkCancellation()
 
@@ -451,6 +476,12 @@ extension UTMQemuVirtualMachine {
         let interface: any QEMUInterface
         let spicePublicKey: Data?
         if isRemoteSession {
+            // QEMU does not own this directory, so it is given access to it like any other resource
+            let remoteSessionURL = await config.remoteSessionURL
+            try? FileManager.default.removeItem(at: remoteSessionURL)
+            try FileManager.default.createDirectory(at: remoteSessionURL, withIntermediateDirectories: true)
+            self.remoteSessionURL = remoteSessionURL
+            system.resources = (system.resources ?? []) + [remoteSessionURL]
             let pipeInterface = UTMPipeInterface()
             await MainActor.run {
                 pipeInterface.monitorInPipeURL = config.monitorPipeURL.appendingPathExtension("in")
@@ -588,6 +619,13 @@ extension UTMQemuVirtualMachine {
     }
     
     func start(options: UTMVirtualMachineStartOptions = []) async throws {
+        try await start(options: options, environment: [:])
+    }
+
+    /// Start with extra environment variables for QEMU and its helper processes
+    ///
+    /// The variables apply to this start only and are never saved.
+    func start(options: UTMVirtualMachineStartOptions = [], environment: [String: String]) async throws {
         guard state == .stopped else {
             throw UTMQemuVirtualMachineError.invalidVmState
         }
@@ -595,7 +633,7 @@ extension UTMQemuVirtualMachine {
         lastStartOptions = options
         do {
             startTask = Task {
-                try await _start(options: options)
+                try await _start(options: options, environment: environment)
             }
             defer {
                 startTask = nil
@@ -609,8 +647,18 @@ extension UTMQemuVirtualMachine {
             // delete suspend state on error
             await registryEntry.setIsSuspended(false)
             await qemuVM.kill()
+            // a start that fails before QEMU is running is not reported as a stop
+            removeRemoteSessionFiles()
             state = .stopped
             throw error
+        }
+    }
+
+    /// Removes the files of a remote session, which include the private key of its SPICE server
+    private func removeRemoteSessionFiles() {
+        if let remoteSessionURL = remoteSessionURL {
+            try? FileManager.default.removeItem(at: remoteSessionURL)
+            self.remoteSessionURL = nil
         }
     }
     
@@ -734,6 +782,10 @@ extension UTMQemuVirtualMachine {
                 try await _saveSnapshot(name: suspendName)
                 let staleNames = try UTMSnapshotManifest.replaceSuspendState(in: pathUrl, with: suspendName)
                 await registryEntry.setIsSuspended(true)
+                // iOS can suspend the app as soon as this returns, before the registry commits by itself
+                await MainActor.run {
+                    UTMRegistry.shared.sync()
+                }
                 try saveScreenshot()
                 // a state that cannot go now stays listed and goes the next time
                 try? await deleteStaleSnapshots(staleNames)
@@ -917,6 +969,7 @@ extension UTMQemuVirtualMachine: QEMUVirtualMachineDelegate {
         ioServiceDelegate = nil
         pipeInterface?.disconnect()
         pipeInterface = nil
+        removeRemoteSessionFiles()
         snapshotUnsupportedError = nil
         try? saveScreenshot()
         state = .stopped
@@ -1251,6 +1304,7 @@ enum UTMQemuVirtualMachineError: Error {
     case keyGenerationFailed
     case vulkanNotCompatible
     case vulkanVersionNotSupported
+    case vmnetNotEntitled
 }
 
 extension UTMQemuVirtualMachineError: LocalizedError {
@@ -1273,6 +1327,8 @@ extension UTMQemuVirtualMachineError: LocalizedError {
             return NSLocalizedString("The selected Vulkan driver is not compatible with the selected renderer backend.", comment: "UTMQemuVirtualMachine")
         case .vulkanVersionNotSupported:
             return NSLocalizedString("Host OS version is too old to support the selected Vulkan driver.", comment: "UTMQemuVirtualMachine")
+        case .vmnetNotEntitled:
+            return NSLocalizedString("This build of UTM does not have the entitlement for Shared Network, Host Only or Bridged networking. Change the network mode to Emulated VLAN.", comment: "UTMQemuVirtualMachine")
         }
     }
 }

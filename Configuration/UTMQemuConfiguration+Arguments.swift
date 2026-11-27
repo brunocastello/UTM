@@ -40,6 +40,22 @@ import Virtualization // for getting network interfaces
         return nil
     }
 
+    /// App group that prefixes the names of POSIX shared memory (virglrenderer's blob resources)
+    ///
+    /// The sandbox allows shared memory only under a group the process is entitled to. An
+    /// unsigned build is entitled to its group without a team prefix even though it does not use
+    /// the group's container (see `appGroupIdentifier`), so its shared memory goes there.
+    var sharedMemoryGroupIdentifier: String? {
+        if let appGroupIdentifier {
+            return appGroupIdentifier
+        }
+        let appGroup = Bundle.main.infoDictionary?["AppGroupIdentifier"] as? String
+        if let appGroup, appGroup.hasPrefix("invalid.") {
+            return String(appGroup.dropFirst("invalid.".count))
+        }
+        return nil
+    }
+
     /// Shared between helper and main process to store Unix sockets
     var socketURL: URL {
         #if os(iOS) || os(visionOS)
@@ -72,24 +88,32 @@ import Virtualization // for getting network interfaces
         socketURL.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("swtpm")
     }
     
+    /// Used only if in remote server mode. Holds the files that the main process creates for QEMU.
+    ///
+    /// These cannot go in `socketURL`: without an app group that is the helper's container,
+    /// where the main process can connect to a socket but cannot create a file.
+    var remoteSessionURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("remote")
+    }
+
     /// Used only if in remote server mode.
     var monitorPipeURL: URL {
-        socketURL.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("qmp")
+        remoteSessionURL.appendingPathComponent("qmp")
     }
 
     /// Used only if in remote server mode.
     var guestAgentPipeURL: URL {
-        socketURL.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("qga")
+        remoteSessionURL.appendingPathComponent("qga")
     }
 
     /// Used only if in remote server mode.
     var spiceTlsKeyUrl: URL {
-        socketURL.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("pem")
+        remoteSessionURL.appendingPathComponent("spice.pem")
     }
 
     /// Used only if in remote server mode.
     var spiceTlsCertUrl: URL {
-        socketURL.appendingPathComponent(information.uuid.uuidString).appendingPathExtension("crt")
+        remoteSessionURL.appendingPathComponent("spice.crt")
     }
 
     /// Used by virglrenderer to allocate shmem
@@ -141,7 +165,9 @@ import Virtualization // for getting network interfaces
         resourceURL
         f()
         f("-S") // startup stopped
+        iommuArguments // must come before the devices it serves
         spiceArguments
+        boardArguments // before other PCI devices, so they keep the board's own slots
         if isRadeonUsed {
             // The Radeon must sit in slot 0xE (its OpenBIOS and boot-command
             // expect /pci@f2000000/QEMU,VGA@e). Emit it before the NIC so an
@@ -336,17 +362,20 @@ import Virtualization // for getting network interfaces
                         // hardware cursor for the bundled Mac OS 9 qemu_vga.ndrv
                         "mac-accel=on"
                     }
-                    if isDisplayGLSupported(display) && isVulkanSupported {
+                    if display.isGLSupported && isVulkanSupported {
                         "hostmem=8G"
                         "blob=true"
                         "venus=true"
                     }
-                    if isDisplayGLSupported(display) && isNeptuneSupported {
+                    if display.isGLSupported && isNeptuneSupported {
                         if !isVulkanSupported {
                             "hostmem=8G"
                             "blob=true"
                         }
                         "neptune=true"
+                    }
+                    if display.hardware.rawValue.hasPrefix("virtio"), let refreshRate = qemu.hostRefreshRate, refreshRate > 0 {
+                        "refresh_rate=\(refreshRate * 1000)"
                     }
                     f()
                     #if os(macOS)
@@ -362,13 +391,9 @@ import Virtualization // for getting network interfaces
         }
     }
 
-    private func isDisplayGLSupported(_ display: UTMQemuConfigurationDisplay) -> Bool {
-        display.hardware.rawValue.contains("-gl-") || display.hardware.rawValue.hasSuffix("-gl")
-    }
-
     private var isGLSupported: Bool {
         displays.contains { display in
-            isDisplayGLSupported(display) || isDisplayPassthroughOpenGL(display)
+            display.isGLSupported || isDisplayPassthroughOpenGL(display)
         }
     }
 
@@ -710,6 +735,52 @@ import Virtualization // for getting network interfaces
         [.ppc, .ppc64].contains(system.architecture) && system.target.rawValue == QEMUTarget_ppc.mac99.rawValue
     }
 
+    /// The aCube Sam460ex board has one CPU, and with -nodefaults it has neither its SATA
+    /// controller nor its UART, which its firmware needs to start.
+    private var isSam460ex: Bool {
+        [.ppc, .ppc64].contains(system.architecture) && system.target.rawValue == QEMUTarget_ppc.sam460ex.rawValue
+    }
+
+    /// The most CPUs QEMU starts each PowerPC board with (`cpu-max` in `query-machines`).
+    /// powernv and pseries take more than any host has.
+    private static let powerPCMaxCpuCounts: [String: Int] = [
+        "40p": 1,
+        "amigaone": 1,
+        "bamboo": 1,
+        "g3beige": 1,
+        "mac99": 1,
+        "none": 1,
+        "pegasos2": 1,
+        "sam460ex": 1,
+        "virtex-ml507": 1,
+        "mpc8544ds": 15,
+        "ppce500": 32,
+    ]
+
+    private var powerPCMaxCpuCount: Int? {
+        guard [.ppc, .ppc64].contains(system.architecture) else {
+            return nil
+        }
+        return Self.powerPCMaxCpuCounts[system.target.rawValue]
+    }
+
+    /// Board devices that QEMU only creates without -nodefaults.
+    @QEMUArgumentBuilder private var boardArguments: [QEMUArgument] {
+        if isSam460ex {
+            // one SiI3112 SATA controller (two buses of one unit) for every two IDE drives
+            let ideDrives = drives.filter { $0.interface == .ide && ($0.imageType == .disk || $0.imageType == .cd) }.count
+            for _ in stride(from: 0, to: ideDrives, by: 2) {
+                f("-device")
+                f("sii3112")
+            }
+            // the board maps its UART only when it has a backend, and U-Boot does not start without it
+            if !serials.contains(where: { $0.target == .autoDevice }) {
+                f("-serial")
+                f("null")
+            }
+        }
+    }
+
     @QEMUArgumentBuilder private var serialArguments: [QEMUArgument] {
         for i in serials.indices {
             f("-chardev")
@@ -760,7 +831,13 @@ import Virtualization // for getting network interfaces
                 #if arch(x86_64)
                 if let cpu = highestIntelCPUConfigurationForHost() {
                     f("-cpu")
-                    f(cpu)
+                    cpu
+                    if system.architecture == .x86_64 {
+                        // Windows uses the TSC as its clock only if it is invariant and no hypervisor is reported.
+                        "+invtsc"
+                        "-hypervisor"
+                    }
+                    f()
                 }
                 #else
                 f("-cpu")
@@ -822,7 +899,17 @@ import Virtualization // for getting network interfaces
         return value
     }
     
+    /// Cores and CPUs for -smp, limited to what the board supports, as QEMU refuses to start
+    /// a board with more CPUs than that, whether they come from the host or from the user.
     private var emulatedCpuCount: (Int, Int) {
+        let count = requestedCpuCount
+        if let maxCpuCount = powerPCMaxCpuCount, count.1 > maxCpuCount || count.1 < 1 {
+            return (maxCpuCount, maxCpuCount)
+        }
+        return count
+    }
+
+    private var requestedCpuCount: (Int, Int) {
         let singleCpu = (1, 1)
         let hostPhysicalCpu = Int(Self.sysctlIntRead("hw.physicalcpu"))
         let hostLogicalCpu = Int(Self.sysctlIntRead("hw.logicalcpu"))
@@ -863,6 +950,33 @@ import Virtualization // for getting network interfaces
         system.architecture.hasHypervisorSupport && qemu.hasHypervisor
     }
     
+    private var isQ35: Bool {
+        let target = system.target.rawValue
+        return target == "q35" || target.hasPrefix("pc-q35-")
+    }
+
+    /// Interrupt remapping lets the guest run its local APIC in x2APIC mode, where APIC accesses are
+    /// MSR exits instead of MMIO exits that hold the global lock. DMA translation stays off.
+    private var isInterruptRemappingUsed: Bool {
+        system.architecture == .x86_64 && isHypervisorUsed && isQ35 && qemu.hasInterruptRemapping
+    }
+
+    @QEMUArgumentBuilder private var iommuArguments: [QEMUArgument] {
+        if isInterruptRemappingUsed {
+            f("-device")
+            "intel-iommu"
+            "intremap=on"
+            "eim=on"
+            "dma-translation=off"
+            f()
+        }
+    }
+
+    /// Keeps guest RAM resident so the host does not compress or swap it.
+    private var isMemoryLockUsed: Bool {
+        system.architecture == .x86_64 && isHypervisorUsed && qemu.hasMemoryLock
+    }
+
     private var isTSOUsed: Bool {
         system.architecture.hasTSOSupport && qemu.hasTSO
     }
@@ -872,7 +986,7 @@ import Virtualization // for getting network interfaces
     }
     
     private var isSecureBootUsed: Bool {
-        system.architecture.hasSecureBootSupport && system.target.hasSecureBootSupport && qemu.hasTPMDevice
+        system.hasSecureBootSupport && qemu.hasTPMDevice
     }
     
     @QEMUArgumentBuilder private var machineArguments: [QEMUArgument] {
@@ -895,7 +1009,7 @@ import Virtualization // for getting network interfaces
             if system.isForceMulticore || isIntelMacGuest {
                 "thread=multi"
             }
-            var tbSize = system.jitCacheSize > 0 ? system.jitCacheSize : system.memorySize / 4
+            var tbSize = system.effectiveJitCacheSizeMib
             if system.jitCacheSize == 0 && isClassicMacNewWorld {
                 // Mac OS X PPC fills a few hundred MiB with translated code on
                 // boot and desktop alone; a full cache throws everything away and
@@ -1084,6 +1198,10 @@ import Virtualization // for getting network interfaces
             "vim-gl-headless"
             f()
         }
+        if isMemoryLockUsed {
+            f("-overcommit")
+            f("mem-lock=on")
+        }
     }
     
     var hasCustomBios: Bool {
@@ -1100,8 +1218,18 @@ import Virtualization // for getting network interfaces
     }
     
     private var resourceURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("qemu", isDirectory: true)
+        #if DEBUG
+        if let override = Self.resourceURLOverride {
+            return override
+        }
+        #endif
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("qemu", isDirectory: true)
     }
+
+    #if DEBUG
+    /// Replaces the QEMU resource cache so tests can control which firmware images exist.
+    nonisolated(unsafe) static var resourceURLOverride: URL?
+    #endif
     
     private var soundBackend: UTMQEMUSoundBackend {
         let value = UserDefaults.standard.integer(forKey: "QEMUSoundBackend")
@@ -1136,10 +1264,12 @@ import Virtualization // for getting network interfaces
     }
 
     @QEMUArgumentBuilder private var soundArguments: [QEMUArgument] {
+        // the screamer is built into Power Macs, so it needs a backend even when another card is selected
+        let hasScreamer = system.target.isPowerMacMachine || sound.contains(where: { $0.hardware.rawValue == QEMUSoundDevice_ppc.screamer.rawValue })
         if sound.isEmpty {
             f("-audio")
             f("none")
-        } else if sound.contains(where: { $0.hardware.rawValue == "screamer" }) {
+        } else if hasScreamer {
             #if os(iOS) || os(visionOS)
             f("-audio")
             f("none")
@@ -1218,6 +1348,22 @@ import Virtualization // for getting network interfaces
         return system.target.rawValue.starts(with: "pc") || system.target.rawValue == "q35" || system.target.rawValue == "isapc"
     }
 
+    /// The SCSI controller device, or nil when the machine has a built-in SCSI bus.
+    /// ARM64 kernels such as RHEL's lack the LSI driver and the ARM64 UEFI firmware
+    /// cannot boot from it, so ARM64 virt machines use VirtIO SCSI.
+    private var scsiControllerDevice: String? {
+        switch system.architecture {
+        case .sparc, .sparc64:
+            return nil
+        case .m68k:
+            return system.target.rawValue == QEMUTarget_m68k.virt.rawValue ? "virtio-scsi-device" : nil
+        case .aarch64 where system.target.rawValue.hasPrefix("virt"):
+            return "virtio-scsi-pci"
+        default:
+            return "lsi53c895a"
+        }
+    }
+
     /// These machines are hard coded to have one IDE unit per bus in QEMU
     private var isIdeInterfaceSingleUnit: Bool {
         isPcCompatible ||
@@ -1225,7 +1371,8 @@ import Virtualization // for getting network interfaces
         system.target.rawValue == "cubieboard" ||
         system.target.rawValue == "highbank" ||
         system.target.rawValue == "midway" ||
-        system.target.rawValue == "xlnx_zcu102"
+        system.target.rawValue == "xlnx_zcu102" ||
+        isSam460ex
     }
     
     @QEMUArgumentBuilder private func driveArgument(for drive: UTMQemuConfigurationDrive, busInterfaceMap: inout [String: Int], disableBootIndex: Bool = false) -> [QEMUArgument] {
@@ -1256,18 +1403,11 @@ import Virtualization // for getting network interfaces
             f()
         } else if drive.interface == .scsi {
             var bus = "scsi"
-            if system.architecture != .sparc && system.architecture != .sparc64 && system.architecture != .m68k {
+            if let controller = scsiControllerDevice {
                 bus = "scsi0"
                 if busindex == 0 {
                     f("-device")
-                    f("lsi53c895a,id=scsi0")
-                }
-            }
-            if system.architecture == .m68k && system.target.rawValue == QEMUTarget_m68k.virt.rawValue {
-                bus = "scsi0"
-                if busindex == 0 {
-                    f("-device")
-                    f("virtio-scsi-device,id=scsi0")
+                    f("\(controller),id=scsi0")
                 }
             }
             f("-device")
@@ -1546,19 +1686,16 @@ import Virtualization // for getting network interfaces
                 f()
             }
             f("-netdev")
-            var useVMnet = false
+            let useVMnet = networks[i].isVmnet
             #if os(macOS)
             if networks[i].mode == .shared {
-                useVMnet = true
                 "vmnet-shared"
                 "id=net\(i)"
             } else if networks[i].mode == .bridged {
-                useVMnet = true
                 "vmnet-bridged"
                 "id=net\(i)"
                 "ifname=\(networks[i].bridgeInterface ?? defaultBridgedInterface)"
             } else if networks[i].mode == .host {
-                useVMnet = true
                 "vmnet-host"
                 "id=net\(i)"
                 if let netUuid = networks[i].hostNetUuid {
