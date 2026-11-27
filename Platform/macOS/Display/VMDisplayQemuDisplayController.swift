@@ -67,7 +67,7 @@ class VMDisplayQemuWindowController: VMDisplayWindowController {
     }
     
     override func enterSuspended(isBusy busy: Bool) {
-        if vm.state == .stopped {
+        if displayedState == .stopped {
             connectedUsbDevices.removeAll()
             allUsbDevices.removeAll()
             if isSecondary {

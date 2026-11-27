@@ -73,6 +73,10 @@ class VMDisplayWindowController: NSWindowController, UTMVirtualMachineDelegate {
     private var preventIdleSleepAssertion: IOPMAssertionID?
     private var hasSaveSnapshotFailed: Bool = false
     private var isFinalizing: Bool = false
+    /// The state the window last showed. A restart that starts a new QEMU process
+    /// moves `vm.state` from stopped to starting before the window handles the
+    /// stop, so the cleanup for a stopped VM must not read `vm.state`.
+    private(set) var displayedState: UTMVirtualMachineState = .stopped
 
     @Setting("PreventIdleSleep") private var isPreventIdleSleep: Bool = false
     @Setting("NoQuitConfirmation") private var isNoQuitConfirmation: Bool = false
@@ -258,7 +262,8 @@ class VMDisplayWindowController: NSWindowController, UTMVirtualMachineDelegate {
         setupMainMenu()
         setupToolbarIcons()
 
-        if vm.state == .stopped {
+        displayedState = vm.state
+        if displayedState == .stopped {
             enterSuspended(isBusy: false)
         } else {
             enterLive()
@@ -318,7 +323,7 @@ class VMDisplayWindowController: NSWindowController, UTMVirtualMachineDelegate {
     func enterSuspended(isBusy busy: Bool) {
         overlayView.isHidden = false
         let playDescription = NSLocalizedString("Start", comment: "VMDisplayWindowController")
-        let stopped = vm.state == .stopped
+        let stopped = displayedState == .stopped
         powerSegmentedControl.setImage(NSImage(systemSymbolName: "play.fill", accessibilityDescription: playDescription),
                                        forSegment: PowerSegment.startPause.rawValue)
         startPauseMenuItem.title = playDescription
@@ -399,6 +404,7 @@ class VMDisplayWindowController: NSWindowController, UTMVirtualMachineDelegate {
             guard !isFinalizing else {
                 return
             }
+            displayedState = state
             switch state {
             case .stopped, .paused:
                 enterSuspended(isBusy: false)

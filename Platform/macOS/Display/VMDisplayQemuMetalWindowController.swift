@@ -170,7 +170,7 @@ class VMDisplayQemuMetalWindowController: VMDisplayQemuWindowController {
             screenshotView.image = vm.screenshot?.image
             screenshotView.isHidden = false
         }
-        if vm.state == .stopped {
+        if displayedState == .stopped {
             vmDisplay = nil
             vmInput = nil
             displaySize = .zero

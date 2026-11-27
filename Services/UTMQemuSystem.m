@@ -298,6 +298,11 @@ static int startQemu(UTMProcess *process, int argc, const char *argv[], const ch
 
 /// Called by superclass
 - (void)processHasExited:(NSInteger)exitCode message:(nullable NSString *)message {
+    NSString *reboot = self.extraEnvironment[@"QEMU_REBOOT_EXIT_STATUS"];
+    if (reboot.length > 0 && exitCode == reboot.integerValue) {
+        _didRequestRestart = YES;
+        exitCode = 0; // a clean stop for QEMUKit; the VM starts again
+    }
     [self.launcherDelegate qemuLauncher:self didExitWithExitCode:exitCode message:message];
 }
 
