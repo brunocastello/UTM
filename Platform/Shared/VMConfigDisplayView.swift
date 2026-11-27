@@ -35,6 +35,18 @@ struct VMConfigDisplayView: View {
                     if config.hasVgaRamSetting {
                         NumberTextField("VGA Device RAM (MB)", number: $config.vgaRamMib.bound, prompt: "16")
                     }
+                    
+                    #if os(macOS)
+                    if config.hardware.rawValue == "vmware-svga" {
+                        VStack(alignment: .leading) {
+                            Toggle("OpenGL Passthrough", isOn: $config.isPassthroughOpenGL)
+                            if config.isPassthroughOpenGL {
+                                Text("Needs the Intel guest kit drivers.")
+                                    .font(.footnote)
+                            }
+                        }.padding(.bottom, 12)
+                    }
+                    #endif
                 }
                 
                 DetailedSection("Auto Resolution", description: "Requires SPICE guest agent tools to be installed.") {

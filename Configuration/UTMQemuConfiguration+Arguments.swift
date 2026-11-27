@@ -16,8 +16,9 @@
 
 import Foundation
 #if os(macOS)
-import CoreGraphics // host display size
-import AppKit // NSScreen safe area (notch)
+import CoreGraphics // host display size for the PassthroughOpenGL panel
+import AppKit // NSScreen safe area (notch) for the PassthroughOpenGL panel
+import Carbon.HIToolbox // physical keyboard layout for Intel Mac guests
 import Virtualization // for getting network interfaces
 #endif
 
@@ -344,6 +345,12 @@ import Virtualization // for getting network interfaces
                     if display.hardware.rawValue.lowercased().contains("vga") && isClassicMacNewWorld {
                         "edid=on"
                     }
+                    #if os(macOS)
+                    if display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL {
+                        // host executor ships as VIMPassthroughOpenGLHost.framework
+                        "passthrough-opengl-bridge=on"
+                    }
+                    #endif
                     if isClassicMacAccelDisplay(display) {
                         // hardware cursor for the bundled Mac OS 9 qemu_vga.ndrv
                         "mac-accel=on"
@@ -364,9 +371,75 @@ import Virtualization // for getting network interfaces
                         "refresh_rate=\(refreshRate * 1000)"
                     }
                     f()
+                    #if os(macOS)
+                    if display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL {
+                        for global in passthroughOpenGLHostPanelGlobals(retina: display.isNativeResolution) {
+                            f("-global")
+                            f(global)
+                        }
+                    }
+                    #endif
                 }
             }
         }
+    }
+
+    private var isGLSupported: Bool {
+        displays.contains { display in
+            display.isGLSupported || isDisplayPassthroughOpenGL(display)
+        }
+    }
+
+    /// Physical layout of the host keyboard for QEMU's usb-kbd `apple-layout`
+    /// (VirtualIntelMac's VIMHostKeyboardLayout): ansi, iso or jis.
+    private static var hostKeyboardLayout: String {
+        #if os(macOS)
+        switch KBGetLayoutType(Int16(LMGetKbdType())) {
+        case PhysicalKeyboardLayoutType(kKeyboardISO): return "iso"
+        case PhysicalKeyboardLayoutType(kKeyboardJIS): return "jis"
+        default: return "ansi"
+        }
+        #else
+        return "ansi"
+        #endif
+    }
+
+    /// Mac OS X Intel guest on the OpenGL passthrough card: gets VirtualIntelMac 2.2's
+    /// CPU profile, TCG fast paths and Hybrid Hypervisor.
+    var isIntelMacGuest: Bool {
+        #if os(macOS) && arch(arm64)
+        return system.architecture == .x86_64 && displays.contains { isDisplayPassthroughOpenGL($0) }
+        #else
+        return false
+        #endif
+    }
+
+    /// Environment for the QEMU process, as VirtualIntelMac 2.2 sets it on Apple silicon.
+    var qemuEnvironment: [String: String] {
+        guard isIntelMacGuest else {
+            return [:]
+        }
+        var environment = [
+            // TCG fast paths (each is opt-in in QEMU)
+            "PVG_TCG_TSO": "0", "PVG_TCG_LAZY_JMP_CACHE": "1", "PVG_TCG_KEEP_PHYS_TLB": "1",
+            "PVG_TCG_INLINE_JMP_CACHE": "1", "PVG_TCG_NATIVE_FP_FLAGS": "0",
+            "PVG_TCG_NATIVE_PACKED_FP": "1", "PVG_TCG_NATIVE_EXACT_FP": "1",
+            "PVG_TCG_ALTERNATE_LOOKUP": "1", "PVG_TCG_PCID_CONTEXTS": "1",
+            "PVG_TCG_CONTEXT_JMP_CACHE": "1", "PVG_TCG_FAST_PTW": "1",
+            "PVG_TCG_TLB_FLOOR_BITS": "12", "PVG_TCG_TLB_FLOOR_MASK": "4",
+            // Hybrid Hypervisor with its qualified baseline (falls back to TCG)
+            "LC_HVDBT": "1", "LC_HVDBT_KEEP_KPTI": "0", "LC_HVDBT_INLINE_SHR8": "0",
+            "LC_HVDBT_PTE_SAME64": "0", "LC_HVDBT_RETAIN_SHARED_DEAD": "0",
+            "LC_HVDBT_KEEPER_INACTIVE_GUARD": "0", "LC_HVDBT_PAGE_REP": "0",
+            "LC_HVDBT_PROFILE_SHIFT_HELPERS": "0", "LC_HVDBT_PROFILE_INVALIDATION": "0",
+            "LC_HVDBT_PROFILE_COMPILE_INPUTS": "0", "LC_HVDBT_MMU_OBSERVATIONS": "0",
+            "ENGINE_TRACE": "0",
+        ]
+        // guest RAM as POSIX shared memory: the sandbox allows names under the app group only
+        if let appGroup = appGroupIdentifier {
+            environment["QEMU_SHM_APP_GROUP"] = appGroup
+        }
+        return environment
     }
 
     /// Mac OS 9 / Mac OS X PowerPC VGA with the accelerated qemu_vga.ndrv (hardware cursor).
@@ -374,15 +447,39 @@ import Virtualization // for getting network interfaces
         display.hardware.rawValue == "VGA" && isClassicMacNewWorld
     }
 
-    private var isGLSupported: Bool {
-        displays.contains { display in
-            display.isGLSupported
+    /// The OpenGL passthrough bridge presents host-rendered IOSurfaces as Metal
+    /// scanouts, which reach the client through the GL SPICE display.
+    #if os(macOS)
+    /// VirtualIntelMac's guest driver publishes one native panel; start it at the host display's
+    /// resolution (Retina: HiDPI). The boot panel is bounded to 2560x1600 (scale 2 needs at least
+    /// 2048x1536); a larger host size follows once the driver opts into large scanout.
+    /// The size is the full-screen area: on a Mac with a notch, full-screen windows stay below it,
+    /// so a panel that includes the notch strip would be letterboxed.
+    /// Retina Mode off (Snow Leopard, or 1x resolutions): passthrough-opengl-hidpi=off.
+    /// Placed before the user's arguments, so their own -global panel settings still win.
+    private func passthroughOpenGLHostPanelGlobals(retina: Bool) -> [String] {
+        let prefix = "vmware-svga.passthrough-opengl-"
+        let hidpi = retina ? [] : ["\(prefix)hidpi=off"]
+        guard let host = hostFullScreenPixelSize else {
+            return hidpi
         }
+        let (pixelWidth, pixelHeight, scale) = host
+        var panelWidth = pixelWidth, panelHeight = pixelHeight
+        if pixelWidth > 2560 || pixelHeight > 1600 || (scale == 2 && (pixelWidth < 2048 || pixelHeight < 1536)) {
+            panelWidth = 2560
+            panelHeight = 1600
+        }
+        var globals = hidpi + ["\(prefix)panel-width=\(panelWidth)", "\(prefix)panel-height=\(panelHeight)", "\(prefix)ui-scale=\(scale)"]
+        if (panelWidth, panelHeight) != (pixelWidth, pixelHeight) {
+            globals += ["\(prefix)host-width=\(pixelWidth)", "\(prefix)host-height=\(pixelHeight)", "\(prefix)host-scale=\(scale)"]
+        }
+        return globals
     }
+    #endif
 
     /// Pixel size of a full-screen window on the host's main display, and its backing scale.
     /// On a Mac with a notch, full-screen windows stay below it, so the notch strip is left out.
-    /// Even sizes.
+    /// Even sizes, as VirtualIntelMac's display agent requires.
     private var hostFullScreenPixelSize: (Int, Int, Int)? {
         #if os(macOS)
         guard let mode = CGDisplayCopyDisplayMode(CGMainDisplayID()), mode.width > 0, mode.height > 0 else {
@@ -401,6 +498,14 @@ import Virtualization // for getting network interfaces
         return (pixelWidth, pixelHeight, scale)
         #else
         return nil
+        #endif
+    }
+
+    private func isDisplayPassthroughOpenGL(_ display: UTMQemuConfigurationDisplay) -> Bool {
+        #if os(macOS)
+        return display.hardware.rawValue == "vmware-svga" && display.isPassthroughOpenGL
+        #else
+        return false
         #endif
     }
 
@@ -648,6 +753,11 @@ import Virtualization // for getting network interfaces
                 // ARM64 QEMU does not support "-cpu default" so we hard code a sensible default
                 f("-cpu")
                 f("cortex-a15")
+            } else if isIntelMacGuest {
+                // VirtualIntelMac 2.2's Penryn profile; TSC at 1.2 GHz (Snow Leopard's
+                // 64-bit commpage needs more than ~1 GHz)
+                f("-cpu")
+                f("Penryn,vendor=GenuineIntel,+sse4.2,+popcnt,+aes,+pclmulqdq,+pcid,tsc-frequency=1200000000,vmware-cpuid-freq=off")
             } else if system.architecture == .x86_64, let cpu = highestIntelCPUConfigurationForHost() {
                 f("-cpu")
                 f(cpu)
@@ -670,6 +780,11 @@ import Virtualization // for getting network interfaces
         "cores=\(emulatedCpuCount.0)"
         "threads=\(emulatedCpuCount.1/emulatedCpuCount.0)"
         f()
+        if isIntelMacGuest && system.target.rawValue.contains("q35") {
+            // route PIRQ F like VirtualIntelMac so Apple's 8254X driver keeps its link IRQ
+            f("-global")
+            f("ICH9-LPC.x-apic-pirq-f-native-only=on")
+        }
     }
     
     private static func sysctlIntRead(_ name: String) -> UInt64 {
@@ -696,6 +811,9 @@ import Virtualization // for getting network interfaces
         let userCpu = system.cpuCount
         if userCpu > 0 || hostPhysicalCpu == 0 {
             return (userCpu, userCpu) // user override
+        }
+        if isIntelMacGuest {
+            return (4, 4) // VirtualIntelMac's default; the Hybrid Hypervisor runs up to 8
         }
         // SPARC5 defaults to single CPU
         if isSparc {
@@ -783,7 +901,7 @@ import Virtualization // for getting network interfaces
         } else {
             f("-accel")
             "tcg"
-            if system.isForceMulticore {
+            if system.isForceMulticore || isIntelMacGuest {
                 "thread=multi"
             }
             var tbSize = system.effectiveJitCacheSizeMib
@@ -821,6 +939,9 @@ import Virtualization // for getting network interfaces
             #endif
             // disable HPET because it causes issues for some OS and also hinders performance
             properties = properties.appendingDefaultPropertyName("hpet", value: "off")
+            if isIntelMacGuest {
+                properties = properties.appendingDefaultPropertyName("memory-backend", value: "pvg-ram")
+            }
         }
         if target == "virt" || target.hasPrefix("virt-") && !architecture.hasPrefix("riscv") {
             if #available(macOS 12.4, iOS 15.5, *, *) {
@@ -862,6 +983,17 @@ import Virtualization // for getting network interfaces
             f("PIIX4_PM.disable_s3=1") // applies for pc-i440fx-* types
             f("-global")
             f("ICH9-LPC.disable_s3=1") // applies for pc-q35-* types
+        }
+        if isIntelMacGuest {
+            // VirtualIntelMac: no reliable S3/S4 resume, so hibernation is not offered either
+            f("-global")
+            f("ICH9-LPC.disable_s4=1")
+        }
+        if isIntelMacGuest {
+            // VirtualIntelMac (Snow Leopard … High Sierra): a period memory speed in the
+            // DIMM records its MacPro5,1 profile keeps
+            f("-smbios")
+            f("type=17,speed=1066")
         }
         if qemu.hasUefiBoot, let prefix = UTMQemuConfigurationQEMU.uefiImagePrefix(forArchitecture: system.architecture) {
             let secure = isSecureBootUsed ? "-secure" : ""
@@ -933,6 +1065,26 @@ import Virtualization // for getting network interfaces
         f("-m")
         system.memorySize
         f()
+        if isIntelMacGuest {
+            // As VirtualIntelMac on Apple silicon, for every Intel Mac guest: guest RAM in
+            // POSIX shared memory, named under the app group so the sandbox allows it
+            // (QEMU_SHM_APP_GROUP). Builds without an app group (unsigned) use a file.
+            f("-object")
+            if appGroupIdentifier != nil {
+                "memory-backend-shm"
+                "id=pvg-ram"
+                "size=\(system.memorySize)M"
+                "share=on"
+            } else {
+                "memory-backend-file"
+                "id=pvg-ram"
+                "size=\(system.memorySize)M"
+                "mem-path="
+                resourceURL
+                "share=on"
+            }
+            f()
+        }
         if isMemoryLockUsed {
             f("-overcommit")
             f("mem-lock=on")
@@ -1292,7 +1444,13 @@ import Virtualization // for getting network interfaces
             f("-device")
             f("usb-mouse,bus=usb-bus.0")
             f("-device")
-            f("usb-kbd,bus=usb-bus.0")
+            if isIntelMacGuest {
+                // Apple keyboard identity with the host's physical layout, as VirtualIntelMac,
+                // so Mac OS X maps ISO and JIS keys without asking for the keyboard type
+                f("usb-kbd,bus=usb-bus.0,apple-layout=\(Self.hostKeyboardLayout)")
+            } else {
+                f("usb-kbd,bus=usb-bus.0")
+            }
         }
         #if WITH_USB
         let maxDevices = input.maximumUsbShare

@@ -400,8 +400,8 @@ extension UTMQemuVirtualMachine {
         system.shmemDirectoryURL = await config.shmemDirectoryURL
         system.appSandboxGroupId = await config.sharedMemoryGroupIdentifier
         system.hasDebugLog = hasDebugLog
-        // last, so it overrides any variable set above
-        system.extraEnvironment = environment
+        // last, so it overrides any variable set above; per-guest tuning first
+        system.extraEnvironment = (await config.qemuEnvironment).merging(environment) { _, caller in caller }
         try Task.checkCancellation()
 
         if isShortcut {
