@@ -2,8 +2,8 @@ Mac OS 9 3D (OpenGL and RAVE) for UTM
 =====================================
 
 OpenGLLibrary replaces Apple's OpenGLLibrary so OpenGL games run on the
-host GPU. "UTM RAVE Loader" turns on Apple's Classic RAVE engine on top of
-that OpenGL, so RAVE and QuickDraw 3D games are accelerated too. Both need
+host GPU. "UTM RAVE Loader" adds the UTM RAVE engine, a RAVE drawing engine
+on top of that OpenGL, so RAVE and QuickDraw 3D games are accelerated too. Both need
 a UTM VM with the "VGA" display (Mac OS 9, mac99) and this UTM version's
 qemu_vga driver. Tested with GLQuake, Quake III Arena demo, Nanosaur and
 Blokz RAVE.
@@ -24,8 +24,10 @@ Use
 - Several OpenGL programs can run at the same time; windows in front of
   an OpenGL window are respected.
 - Full screen and windowed modes work.
-- RAVE games use the "RAVEOGL" engine; Apple's software RAVE engine is
-  switched off while the loader is installed.
+- RAVE games use the "UTM RAVE" engine; Apple's software RAVE engine is
+  switched off while the loader is installed. To compare with Apple's
+  Classic RAVE engine ("RAVEOGL"), put an empty file named "UTM RAVE.classic"
+  in the System Folder and restart.
 - Diagnostics: an empty file named "OpenGLLibrary.debug" in the System
   Folder writes a detailed OpenGLLibrary.log there. Remove it afterwards.
 
