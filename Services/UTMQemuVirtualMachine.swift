@@ -533,10 +533,11 @@ extension UTMQemuVirtualMachine {
         #if os(macOS)
         let isIntelMacGuest = await config.isIntelMacGuest
         let isIntelMacPassthroughGuest = await config.isIntelMacPassthroughGuest
+        let isMacOSXPPCGuest = await config.isMacOSXPPCGuest
         let hasClipboardSharing = await config.sharing.hasClipboardSharing
-        if isIntelMacGuest && hasClipboardSharing, let ioService = interface as? UTMSpiceIO {
+        if (isIntelMacGuest || isMacOSXPPCGuest) && hasClipboardSharing, let ioService = interface as? UTMSpiceIO {
             // Mojave and later reach the helper over VirtIO; older guests over a serial port
-            let isVirtio = !isIntelMacPassthroughGuest
+            let isVirtio = isIntelMacGuest && !isIntelMacPassthroughGuest
             await MainActor.run {
                 let clipboard = UTMIntelMacClipboard(vm: self, ioService: ioService, isVirtio: isVirtio)
                 clipboard.start()

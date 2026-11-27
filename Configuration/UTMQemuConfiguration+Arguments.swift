@@ -701,6 +701,15 @@ import Virtualization // for getting network interfaces
         displays.contains { isRadeon($0) }
     }
 
+    /// Mac OS X 10.4/10.5 PowerPC guest (Radeon 9700): gets VirtualIntelMac's guest helpers
+    /// (PowerPC build in the guest kit) on two PCI serial ports. Tiger and Leopard name a QEMU
+    /// pci-serial /dev/cu.pci-serialNN, NN being the decimal PCI slot: the agent uses slot 0x1d
+    /// (pci-serial29), the clipboard 0x1e (pci-serial30). Slot 0x1f gets no interrupt in OpenBIOS.
+    /// Earlier releases have no PCI serial driver; the ports stay unused there.
+    var isMacOSXPPCGuest: Bool {
+        isClassicMacNewWorld && isRadeonR300Used
+    }
+
     /// The Radeon 9700 (Mac OS X 10.3-10.5), which needs its own OpenBIOS and boot properties.
     private var isRadeonR300Used: Bool {
         displays.contains { isRadeonR300($0) }
@@ -1778,6 +1787,27 @@ import Virtualization // for getting network interfaces
             }
             "id=org.qemu.guest_agent"
             f()
+        }
+        if isMacOSXPPCGuest {
+            f("-chardev")
+            if isRemoteSpice {
+                "pipe"
+                "path="
+                guestAgentPipeURL
+            } else {
+                "spiceport"
+                "name=org.qemu.guest_agent.0"
+            }
+            "id=org.qemu.guest_agent"
+            f()
+            f("-device")
+            f("pci-serial,chardev=org.qemu.guest_agent,addr=0x1d")
+            if sharing.hasClipboardSharing && !isRemoteSpice {
+                f("-chardev")
+                f("spiceport,name=org.vim.clipboard,id=vimclipboard")
+                f("-device")
+                f("pci-serial,chardev=vimclipboard,addr=0x1e")
+            }
         }
         if isIntelMacPassthroughGuest && sharing.hasClipboardSharing && !isRemoteSpice {
             // VirtualIntelMac's text clipboard helper uses COM1 (/dev/cu.serial1) on these guests
