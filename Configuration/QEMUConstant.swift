@@ -400,6 +400,7 @@ enum QEMUPackageFileName: String {
     case debugLog = "debug.log"
     case efiVariables = "efi_vars.fd"
     case tpmData = "tpmdata"
+    case macNvram = "mac_nvram.bin"
     case vmState = "vmstate"
 }
 
