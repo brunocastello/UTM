@@ -736,19 +736,6 @@ import Virtualization // for getting network interfaces
         qemu.additionalArguments.contains { $0.string.contains("tablet") }
     }
 
-    /// The NewWorld Mac NVRAM file in the VM's data folder (mac99 only).
-    var macNvramURL: URL? {
-        guard isClassicMacNewWorld, !hasCustomBios, let vars = qemu.efiVarsURL else {
-            return nil
-        }
-        return vars.deletingLastPathComponent().appendingPathComponent(QEMUPackageFileName.macNvram.rawValue)
-    }
-
-    /// Bytes QEMU's macio-nvram holds: two 8 KB banks with osx-nvram, one otherwise.
-    var macNvramSize: Int {
-        machineProperties.contains("osx-nvram=on") ? 0x4000 : 0x2000
-    }
-
     /// Width and height of a `-g WxH[xD]` in the user's own arguments.
     private var userArgumentsGraphicSize: (Int, Int)? {
         for argument in qemu.additionalArguments {
@@ -1156,23 +1143,6 @@ import Virtualization // for getting network interfaces
                 }
                 f()
             }
-        }
-        if let nvram = macNvramURL {
-            // Mac OS keeps its PRAM in the NewWorld NVRAM (the display mode the
-            // video driver starts in, among others): back it with a file in the
-            // VM so it survives a restart.
-            f("-drive")
-            "if=none"
-            "format=raw"
-            "id=macnvram"
-            "file.filename="
-            nvram
-            if !isUseFileLock {
-                "file.locking=off"
-            }
-            f()
-            f("-global")
-            f("macio-nvram.drive=macnvram")
         }
         if isClassicMacM68K {
             let declrom = resourceURL.appendingPathComponent("m68k-declrom")

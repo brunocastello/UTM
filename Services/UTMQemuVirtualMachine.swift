@@ -357,19 +357,6 @@ extension UTMQemuVirtualMachine {
         }
     }
     
-    /// A blank file of the size QEMU expects; QEMU formats it on first use and
-    /// refuses a file of any other size (e.g. after osx-nvram was toggled).
-    @MainActor private func qemuEnsureMacNvramAvailable() async throws {
-        guard let url = config.macNvramURL else {
-            return
-        }
-        let size = config.macNvramSize
-        let current = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
-        if current != size {
-            try Data(count: size).write(to: url)
-        }
-    }
-
     private func determineSnapshotSupport() async -> Error? {
         // predetermined reasons
         if isRunningAsDisposible {
@@ -531,8 +518,6 @@ extension UTMQemuVirtualMachine {
         
         // create EFI variables for legacy config as well as handle UEFI resets
         try await qemuEnsureEfiVarsAvailable()
-        try Task.checkCancellation()
-        try await qemuEnsureMacNvramAvailable()
         try Task.checkCancellation()
         
         // start QEMU
