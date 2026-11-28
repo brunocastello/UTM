@@ -679,9 +679,14 @@ import Virtualization // for getting network interfaces
         displays.contains { isRadeonR100($0) }
     }
 
-    /// Resolution the guest starts in: the host's full-screen size in points, capped to what
-    /// the card's EDID should offer; 1024x768 when unknown.
+    /// Resolution the guest starts in: the size the user asked for with `-g` (so the
+    /// firmware, the card's preferred mode and the mode Mac OS 9 saved all agree from
+    /// power-on to the desktop), else the host's full-screen size in points, capped to
+    /// what the card's EDID should offer; 1024x768 when unknown.
     private var radeonR100InitialSize: (Int, Int) {
+        if let size = userArgumentsGraphicSize {
+            return size
+        }
         guard let host = hostFullScreenPixelSize else {
             return (1024, 768)
         }
@@ -729,6 +734,20 @@ import Virtualization // for getting network interfaces
     /// (e.g. `-usbdevice tablet`), so UTM must not add a second one.
     private var userArgumentsAddTablet: Bool {
         qemu.additionalArguments.contains { $0.string.contains("tablet") }
+    }
+
+    /// Width and height of a `-g WxH[xD]` in the user's own arguments.
+    private var userArgumentsGraphicSize: (Int, Int)? {
+        for argument in qemu.additionalArguments {
+            let words = argument.string.split(separator: " ").map(String.init)
+            for (i, word) in words.enumerated() where word == "-g" && i + 1 < words.count {
+                let parts = words[i + 1].split(separator: "x").compactMap { Int($0) }
+                if parts.count >= 2, parts[0] > 0, parts[1] > 0 {
+                    return (parts[0], parts[1])
+                }
+            }
+        }
+        return nil
     }
 
     private var isClassicMacNewWorld: Bool {
