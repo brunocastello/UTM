@@ -679,10 +679,13 @@ import Virtualization // for getting network interfaces
         displays.contains { isRadeonR100($0) }
     }
 
-    /// Resolution the guest starts in: a standard 1024x768. Host-sized odd modes (e.g. 1512x949)
-    /// make ATI's Mac OS 9 driver program a broken mode; other sizes are picked in Monitors.
+    /// Resolution the guest starts in: the host's full-screen size in points, capped to what
+    /// the card's EDID should offer; 1024x768 when unknown.
     private var radeonR100InitialSize: (Int, Int) {
-        (1024, 768)
+        guard let host = hostFullScreenPixelSize else {
+            return (1024, 768)
+        }
+        return (min(host.0 / host.2, 1600) & ~1, min(host.1 / host.2, 1200) & ~1)
     }
 
     private func isRadeon(_ display: UTMQemuConfigurationDisplay) -> Bool {
